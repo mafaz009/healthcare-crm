@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
+import { useDebounce } from '@/hooks/useDebounce';
 import { leadsApi, LEAD_STATUSES, LEAD_SOURCES } from '@/lib/leads';
 import { doctorsApi } from '@/lib/doctors';
 import StatusBadge    from '@/components/ui/StatusBadge';
@@ -21,7 +22,14 @@ export default function LeadsPage() {
   const [loading, setLoading]       = useState(true);
   const [doctors, setDoctors]       = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState({ search: '', status: '', doctorId: '', page: 1 });
+
+  // Only send search to API after user stops typing for 350ms
+  const debouncedSearch = useDebounce(searchInput, 350);
+  useEffect(() => {
+    setFilters((f) => ({ ...f, search: debouncedSearch, page: 1 }));
+  }, [debouncedSearch]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -42,7 +50,10 @@ export default function LeadsPage() {
     }
   }, [user]);
 
-  const handleFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value, page: 1 }));
+  const handleFilter = (key, value) => {
+    if (key === 'search') { setSearchInput(value); return; }
+    setFilters((f) => ({ ...f, [key]: value, page: 1 }));
+  };
 
   return (
     <div className="space-y-5">
@@ -64,7 +75,7 @@ export default function LeadsPage() {
           <input
             className="input pl-9"
             placeholder="Search name, phone, email…"
-            value={filters.search}
+            value={searchInput}
             onChange={(e) => handleFilter('search', e.target.value)}
           />
         </div>
@@ -79,7 +90,7 @@ export default function LeadsPage() {
           </select>
         )}
         {(filters.search || filters.status || filters.doctorId) && (
-          <button onClick={() => setFilters({ search: '', status: '', doctorId: '', page: 1 })}
+          <button onClick={() => { setSearchInput(''); setFilters({ search: '', status: '', doctorId: '', page: 1 }); }}
             className="btn-secondary gap-1.5">
             <FunnelIcon className="w-4 h-4" /> Clear
           </button>

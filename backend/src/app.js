@@ -4,6 +4,7 @@ const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path      = require('path');
 
+const morgan = require('morgan');
 const env    = require('./config/env');
 const prisma = require('./config/database');
 const { notFound, globalHandler } = require('./middleware/errorHandler');
@@ -19,6 +20,11 @@ const webhookRoutes     = require('./modules/webhooks/webhooks.routes');
 const publicRoutes      = require('./modules/public/public.routes');
 
 const app = express();
+
+// ── Request logging ───────────────────────────────────────────────────────────
+// 'dev' in development: "GET /api/leads 200 12ms"
+// 'combined' in production: Apache-style with IP + user-agent (useful for Hostinger logs)
+app.use(morgan(env.isDev ? 'dev' : 'combined'));
 
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());

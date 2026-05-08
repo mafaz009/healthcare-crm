@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const required = ['DATABASE_URL', 'JWT_SECRET'];
+const required = ['DATABASE_URL', 'JWT_SECRET', 'WEBHOOK_SECRET'];
 
 required.forEach((key) => {
   if (!process.env[key]) {
@@ -18,7 +18,7 @@ module.exports = {
   ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
   UPLOAD_DIR: process.env.UPLOAD_DIR || 'uploads',
   MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 5,
-  API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:5000',
-  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
+  API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:5001',
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET,
   isDev: process.env.NODE_ENV !== 'production',
 };

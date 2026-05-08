@@ -1,9 +1,35 @@
-const slugify = require('slugify');
-const path    = require('path');
-const fs      = require('fs');
-const prisma  = require('../../config/database');
-const env     = require('../../config/env');
+const slugify      = require('slugify');
+const path         = require('path');
+const fs           = require('fs');
+const sanitizeHtml = require('sanitize-html');
+const prisma       = require('../../config/database');
+const env          = require('../../config/env');
 const { paginate, paginationMeta } = require('../../utils/pagination');
+
+// Allowed HTML elements and attributes for blog content.
+// Blocks <script>, <iframe>, event handlers (onclick, etc.) and all JS URLs.
+const SANITIZE_OPTIONS = {
+  allowedTags: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr', 'strong', 'em', 'u', 's', 'blockquote',
+    'ul', 'ol', 'li',
+    'a', 'img',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'code', 'pre', 'span', 'div',
+  ],
+  allowedAttributes: {
+    'a':   ['href', 'title', 'target', 'rel'],
+    'img': ['src', 'alt', 'width', 'height', 'loading'],
+    'td':  ['colspan', 'rowspan'],
+    'th':  ['colspan', 'rowspan'],
+    '*':   ['class'],
+  },
+  allowedSchemes: ['http', 'https', 'mailto'],
+  // Strip any attribute value that starts with javascript:
+  allowedSchemesByTag: { 'a': ['http', 'https', 'mailto'] },
+};
+
+const sanitize = (html) => sanitizeHtml(html || '', SANITIZE_OPTIONS);
 
 const BLOG_SELECT = {
   id: true, title: true, slug: true, featuredImage: true,
@@ -87,7 +113,9 @@ const create = async (data) => {
 
   return prisma.blog.create({
     data: {
-      title, content, slug, featuredImage,
+      title,
+      content: sanitize(content),
+      slug, featuredImage,
       seoTitle:        seoTitle        || title,
       metaDescription: metaDescription || '',
       keywords:        keywords        || '',
@@ -112,7 +140,7 @@ const update = async (id, data, tenantFilter) => {
     where: { id },
     data: {
       ...(title   !== undefined && { title, slug }),
-      ...(content !== undefined && { content }),
+      ...(content !== undefined && { content: sanitize(content) }),
       ...(seoTitle        !== undefined && { seoTitle }),
       ...(metaDescription !== undefined && { metaDescription }),
       ...(keywords        !== undefined && { keywords }),

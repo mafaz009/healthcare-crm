@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import Sidebar from '@/components/layout/Sidebar';
-import TopNav  from '@/components/layout/TopNav';
+import Sidebar        from '@/components/layout/Sidebar';
+import TopNav          from '@/components/layout/TopNav';
+import ErrorBoundary   from '@/components/ErrorBoundary';
 
 export default function DashboardLayout({ children }) {
   const { user, loading } = useAuth();
@@ -36,7 +37,7 @@ export default function DashboardLayout({ children }) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopNav onMenuClick={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
     </div>

@@ -8,6 +8,7 @@ import Pagination     from '@/components/ui/Pagination';
 import EmptyState     from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal          from '@/components/ui/Modal';
+import ConfirmModal   from '@/components/ui/ConfirmModal';
 import toast          from 'react-hot-toast';
 import { useForm }    from 'react-hook-form';
 import { PlusIcon, MagnifyingGlassIcon, KeyIcon, ClipboardIcon } from '@heroicons/react/24/outline';
@@ -18,9 +19,10 @@ export default function DoctorsPage() {
   const [doctors, setDoctors]       = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading]       = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newDoctor, setNewDoctor]   = useState(null); // holds temp password result
-  const [filters, setFilters]       = useState({ search: '', status: '', page: 1 });
+  const [showCreate, setShowCreate]       = useState(false);
+  const [newDoctor, setNewDoctor]         = useState(null);
+  const [confirmRegenId, setConfirmRegenId] = useState(null); // doctor id awaiting key regen confirm
+  const [filters, setFilters]             = useState({ search: '', status: '', page: 1 });
 
   // Redirect non-admins
   useEffect(() => {
@@ -50,7 +52,6 @@ export default function DoctorsPage() {
   };
 
   const handleRegenerateKey = async (id) => {
-    if (!confirm('Regenerate API key? The old key will stop working immediately. Update the doctor website right after.')) return;
     try {
       const { data } = await doctorsApi.regenerateKey(id);
       await navigator.clipboard.writeText(data.data.apiKey);
@@ -133,7 +134,7 @@ export default function DoctorsPage() {
                             className={`text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors ${doc.status === 'ACTIVE' ? 'border-gray-200 text-gray-600 hover:bg-gray-50' : 'border-green-200 text-green-600 hover:bg-green-50'}`}>
                             {doc.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
                           </button>
-                          <button onClick={() => handleRegenerateKey(doc.id)}
+                          <button onClick={() => setConfirmRegenId(doc.id)}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-yellow-600 hover:bg-yellow-50"
                             title="Regenerate API Key">
                             <KeyIcon className="w-4 h-4" />
@@ -197,6 +198,15 @@ export default function DoctorsPage() {
           </div>
         </Modal>
       )}
+
+      <ConfirmModal
+        open={!!confirmRegenId}
+        onClose={() => setConfirmRegenId(null)}
+        onConfirm={() => handleRegenerateKey(confirmRegenId)}
+        title="Regenerate API Key"
+        message="The old API key will stop working immediately. You must update the doctor's website with the new key right after. Continue?"
+        confirmLabel="Regenerate"
+      />
     </div>
   );
 }

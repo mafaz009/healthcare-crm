@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth }  from '@/hooks/useAuth';
+import { useDebounce } from '@/hooks/useDebounce';
 import { appointmentsApi, APPOINTMENT_STATUSES } from '@/lib/appointments';
 import { doctorsApi } from '@/lib/doctors';
 import StatusBadge    from '@/components/ui/StatusBadge';
@@ -21,7 +22,13 @@ export default function AppointmentsPage() {
   const [today, setToday]               = useState([]);
   const [doctors, setDoctors]           = useState([]);
   const [showCreate, setShowCreate]     = useState(false);
+  const [searchInput, setSearchInput]   = useState('');
   const [filters, setFilters] = useState({ search: '', status: '', page: 1 });
+
+  const debouncedSearch = useDebounce(searchInput, 350);
+  useEffect(() => {
+    setFilters((f) => ({ ...f, search: debouncedSearch, page: 1 }));
+  }, [debouncedSearch]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -103,7 +110,7 @@ export default function AppointmentsPage() {
         <div className="relative flex-1 min-w-[200px]">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input className="input pl-9" placeholder="Search patient name or phone…"
-            value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))} />
+            value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <select className="input w-auto" value={filters.status}
           onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}>
@@ -181,6 +188,7 @@ export default function AppointmentsPage() {
 
 function CreateAppointmentModal({ open, onClose, onCreated, user, doctors }) {
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm();
+  const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD" for min date
 
   const onSubmit = async (data) => {
     try {
@@ -205,7 +213,12 @@ function CreateAppointmentModal({ open, onClose, onCreated, user, doctors }) {
           </div>
           <div className="col-span-2 sm:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Date *</label>
-            <input type="date" className="input" {...register('preferredDate', { required: 'Required' })} />
+            <input type="date" className="input" min={todayStr}
+              {...register('preferredDate', {
+                required: 'Required',
+                validate: (v) => v >= todayStr || 'Date cannot be in the past',
+              })}
+            />
             {errors.preferredDate && <p className="text-xs text-red-500 mt-1">{errors.preferredDate.message}</p>}
           </div>
           <div className="col-span-2 sm:col-span-1">

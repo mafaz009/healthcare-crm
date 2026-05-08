@@ -1,24 +1,33 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useAuth }  from '@/hooks/useAuth';
-import { blogsApi } from '@/lib/blogs';
+import { useAuth }     from '@/hooks/useAuth';
+import { useDebounce } from '@/hooks/useDebounce';
+import { blogsApi }    from '@/lib/blogs';
 import { doctorsApi } from '@/lib/doctors';
 import StatusBadge    from '@/components/ui/StatusBadge';
 import Pagination     from '@/components/ui/Pagination';
 import EmptyState     from '@/components/ui/EmptyState';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import ConfirmModal   from '@/components/ui/ConfirmModal';
 import toast          from 'react-hot-toast';
 import { format }     from 'date-fns';
 import { PlusIcon, MagnifyingGlassIcon, PencilIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
 
 export default function BlogsPage() {
   const { user } = useAuth();
-  const [blogs, setBlogs]           = useState([]);
-  const [pagination, setPagination] = useState(null);
-  const [loading, setLoading]       = useState(true);
-  const [doctors, setDoctors]       = useState([]);
-  const [filters, setFilters]       = useState({ search: '', status: '', doctorId: '', page: 1 });
+  const [blogs, setBlogs]               = useState([]);
+  const [pagination, setPagination]     = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [doctors, setDoctors]           = useState([]);
+  const [searchInput, setSearchInput]   = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null); // holds blog id to delete
+  const [filters, setFilters]           = useState({ search: '', status: '', doctorId: '', page: 1 });
+
+  const debouncedSearch = useDebounce(searchInput, 350);
+  useEffect(() => {
+    setFilters((f) => ({ ...f, search: debouncedSearch, page: 1 }));
+  }, [debouncedSearch]);
 
   const fetchBlogs = useCallback(async () => {
     setLoading(true);
@@ -48,7 +57,6 @@ export default function BlogsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this blog post? This cannot be undone.')) return;
     try {
       await blogsApi.remove(id);
       toast.success('Blog deleted');
@@ -74,7 +82,7 @@ export default function BlogsPage() {
         <div className="relative flex-1 min-w-[200px]">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input className="input pl-9" placeholder="Search title, keywords…"
-            value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))} />
+            value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <select className="input w-auto" value={filters.status}
           onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value, page: 1 }))}>
@@ -137,7 +145,7 @@ export default function BlogsPage() {
                             title={blog.status === 'PUBLISHED' ? 'Unpublish' : 'Publish'}>
                             <EyeIcon className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDelete(blog.id)}
+                          <button onClick={() => setConfirmDelete(blog.id)}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50">
                             <TrashIcon className="w-4 h-4" />
                           </button>
@@ -160,6 +168,16 @@ export default function BlogsPage() {
           </>
         )}
       </div>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => handleDelete(confirmDelete)}
+        title="Delete Blog Post"
+        message="This blog post will be permanently deleted and removed from all doctor websites. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+      />
     </div>
   );
 }

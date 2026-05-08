@@ -140,15 +140,18 @@ const deleteComment = async (commentId, userId, userRole) => {
   await prisma.leadComment.delete({ where: { id: commentId } });
 };
 
-// ── Status summary counts (for dashboard pipeline view) ───────────────────────
+// ── Status summary counts (single GROUP BY query instead of 6 separate counts) ─
 const getStatusCounts = async (tenantFilter) => {
+  const rows = await prisma.lead.groupBy({
+    by: ['status'],
+    where: tenantFilter,
+    _count: { status: true },
+  });
+
+  // Ensure all statuses appear in the result, even if count is 0
   const statuses = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'APPOINTMENT_BOOKED', 'CONVERTED', 'LOST'];
-  const counts = await Promise.all(
-    statuses.map((status) =>
-      prisma.lead.count({ where: { ...tenantFilter, status } }).then((count) => ({ status, count }))
-    )
-  );
-  return counts;
+  const map = Object.fromEntries(rows.map((r) => [r.status, r._count.status]));
+  return statuses.map((status) => ({ status, count: map[status] || 0 }));
 };
 
 module.exports = { getAll, getById, create, update, updateStatus, remove, addComment, deleteComment, getStatusCounts };

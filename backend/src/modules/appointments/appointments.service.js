@@ -154,16 +154,17 @@ const remove = async (id, tenantFilter) => {
   await prisma.appointment.delete({ where: { id } });
 };
 
-// ── Status summary counts ─────────────────────────────────────────────────────
+// ── Status summary counts (single GROUP BY query instead of 5 separate counts) ─
 const getStatusCounts = async (tenantFilter) => {
+  const rows = await prisma.appointment.groupBy({
+    by: ['status'],
+    where: tenantFilter,
+    _count: { status: true },
+  });
+
   const statuses = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'RESCHEDULED'];
-  const counts = await Promise.all(
-    statuses.map((status) =>
-      prisma.appointment.count({ where: { ...tenantFilter, status } })
-        .then((count) => ({ status, count }))
-    )
-  );
-  return counts;
+  const map = Object.fromEntries(rows.map((r) => [r.status, r._count.status]));
+  return statuses.map((status) => ({ status, count: map[status] || 0 }));
 };
 
 module.exports = { getAll, getToday, getUpcoming, getById, create, createPublic, update, updateStatus, remove, getStatusCounts };
