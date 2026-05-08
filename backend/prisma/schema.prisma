@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  DOCTOR
+  STAFF
+}
+
+enum DoctorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  FOLLOW_UP
+  APPOINTMENT_BOOKED
+  CONVERTED
+  LOST
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USERS  (all roles share this table — role field controls access)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(150)
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+  role      Role     @default(STAFF)
+  isActive  Boolean  @default(true)
+
+  // NULL for SUPER_ADMIN; set for DOCTOR and STAFF accounts
+  doctorId  Int?
+  doctor    Doctor?  @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leadComments LeadComment[]
+
+  @@index([doctorId])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCTORS  (one row per client / doctor)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Doctor {
+  id        Int          @id @default(autoincrement())
+  name      String       @db.VarChar(150)
+  specialty String       @db.VarChar(150)
+  domain    String       @db.VarChar(255)   // e.g. "doctorabc.com"
+  email     String       @unique @db.VarChar(255)
+  phone     String?      @db.VarChar(20)
+  status    DoctorStatus @default(ACTIVE)
+  logoUrl   String?      @db.VarChar(500)
+  address   String?      @db.Text
+
+  // API key for external website integration (generated on create)
+  apiKey    String       @unique @db.VarChar(64)
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users        User[]
+  leads        Lead[]
+  appointments Appointment[]
+  blogs        Blog[]
+
+  @@map("doctors")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEADS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id           Int        @id @default(autoincrement())
+  patientName  String     @db.VarChar(150)
+  phone        String     @db.VarChar(20)
+  email        String?    @db.VarChar(255)
+  city         String?    @db.VarChar(100)
+  source       String?    @db.VarChar(100)      // facebook, google, walk-in, referral …
+  campaignName String?    @db.VarChar(200)
+  status       LeadStatus @default(NEW)
+
+  doctorId     Int
+  doctor       Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  comments     LeadComment[]
+
+  @@index([doctorId])
+  @@index([status])
+  @@index([doctorId, status])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAD COMMENTS  (separate table so multiple notes can be added over time)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LeadComment {
+  id        Int      @id @default(autoincrement())
+  comment   String   @db.Text
+
+  leadId    Int
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_comments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPOINTMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Appointment {
+  id            Int               @id @default(autoincrement())
+  patientName   String            @db.VarChar(150)
+  phone         String            @db.VarChar(20)
+  email         String?           @db.VarChar(255)
+  issue         String?           @db.Text
+  preferredDate DateTime          @db.Date
+  preferredTime String?           @db.VarChar(10)  // "10:30 AM"
+  status        AppointmentStatus @default(PENDING)
+  notes         String?           @db.Text
+  source        String?           @db.VarChar(100) // website, phone, walk-in, api
+
+  doctorId      Int
+  doctor        Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([doctorId])
+  @@index([status])
+  @@index([preferredDate])
+  @@index([doctorId, status])
+  @@map("appointments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Blog {
+  id              Int        @id @default(autoincrement())
+  title           String     @db.VarChar(300)
+
+  // Slug is unique PER doctor — two doctors can both have /blog/knee-pain
+  slug            String     @db.VarChar(350)
+
+  featuredImage   String?    @db.VarChar(500)
+  content         String     @db.LongText
+
+  // SEO fields  (160 chars for meta desc, 70 for title — industry standard limits)
+  seoTitle        String?    @db.VarChar(70)
+  metaDescription String?    @db.VarChar(160)
+  keywords        String?    @db.VarChar(500)
+
+  status          BlogStatus @default(DRAFT)
+  publishedAt     DateTime?
+
+  doctorId        Int
+  doctor          Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Compound unique: same slug allowed across different doctors
+  @@unique([slug, doctorId])
+  @@index([doctorId])
+  @@index([status])
+  @@index([doctorId, status])
+  @@map("blogs")
+}

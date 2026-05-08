@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment files (NEVER commit these)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Build output
+.next/
+dist/
+build/
+
+# Uploads (user files, not code)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Prisma generated
+backend/prisma/migrations/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
