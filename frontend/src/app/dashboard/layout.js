@@ -1,19 +1,49 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import Sidebar        from '@/components/layout/Sidebar';
-import TopNav          from '@/components/layout/TopNav';
-import ErrorBoundary   from '@/components/ErrorBoundary';
+import Sidebar      from '@/components/layout/Sidebar';
+import TopNav       from '@/components/layout/TopNav';
+import ErrorBoundary from '@/components/ErrorBoundary';
+
+/**
+ * Route-level access control.
+ * Maps URL path prefixes to required roles.
+ * Routes NOT listed here are accessible to any authenticated user.
+ */
+const PROTECTED_ROUTES = [
+  { prefix: '/dashboard/doctors',    roles: ['SUPER_ADMIN'] },
+  { prefix: '/dashboard/audit-logs', roles: ['SUPER_ADMIN'] },
+  { prefix: '/dashboard/staff',      roles: ['SUPER_ADMIN', 'DOCTOR_ADMIN'] },
+  { prefix: '/dashboard/practice',   roles: ['DOCTOR_ADMIN'] },
+];
+
+function checkRouteAccess(pathname, userRole) {
+  const match = PROTECTED_ROUTES.find((r) => pathname.startsWith(r.prefix));
+  if (!match) return true; // public to all authenticated users
+  return match.roles.includes(userRole);
+}
 
 export default function DashboardLayout({ children }) {
   const { user, loading } = useAuth();
-  const router = useRouter();
+  const router   = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
-  }, [user, loading, router]);
+    if (loading) return;
+
+    // Not logged in → redirect to login
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
+
+    // Logged in but insufficient role for this route → redirect to dashboard home
+    if (!checkRouteAccess(pathname, user.role)) {
+      router.replace('/dashboard');
+    }
+  }, [user, loading, pathname, router]);
 
   if (loading) {
     return (
@@ -29,7 +59,8 @@ export default function DashboardLayout({ children }) {
     );
   }
 
-  if (!user) return null;
+  // No user or access denied — return null while redirect happens
+  if (!user || !checkRouteAccess(pathname, user.role)) return null;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

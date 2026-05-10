@@ -12,8 +12,11 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Modal          from '@/components/ui/Modal';
 import toast          from 'react-hot-toast';
 import { useForm }    from 'react-hook-form';
-import { format }     from 'date-fns';
-import { PlusIcon, MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { format, isPast, isToday } from 'date-fns';
+import {
+  PlusIcon, MagnifyingGlassIcon, FunnelIcon,
+  ClockIcon, ExclamationCircleIcon, UserCircleIcon,
+} from '@heroicons/react/24/outline';
 
 export default function LeadsPage() {
   const { user } = useAuth();
@@ -23,9 +26,11 @@ export default function LeadsPage() {
   const [doctors, setDoctors]       = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [searchInput, setSearchInput] = useState('');
-  const [filters, setFilters] = useState({ search: '', status: '', doctorId: '', page: 1 });
+  const [filters, setFilters] = useState({
+    search: '', status: '', doctorId: '',
+    overdue: '', assignedUserId: '', page: 1,
+  });
 
-  // Only send search to API after user stops typing for 350ms
   const debouncedSearch = useDebounce(searchInput, 350);
   useEffect(() => {
     setFilters((f) => ({ ...f, search: debouncedSearch, page: 1 }));
@@ -55,6 +60,9 @@ export default function LeadsPage() {
     setFilters((f) => ({ ...f, [key]: value, page: 1 }));
   };
 
+  const hasActiveFilters = filters.search || filters.status || filters.doctorId ||
+                           filters.overdue || filters.assignedUserId;
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -72,26 +80,35 @@ export default function LeadsPage() {
       <div className="card p-4 flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            className="input pl-9"
-            placeholder="Search name, phone, email…"
-            value={searchInput}
-            onChange={(e) => handleFilter('search', e.target.value)}
-          />
+          <input className="input pl-9" placeholder="Search name, phone, email…"
+            value={searchInput} onChange={(e) => handleFilter('search', e.target.value)} />
         </div>
-        <select className="input w-auto" value={filters.status} onChange={(e) => handleFilter('status', e.target.value)}>
+
+        <select className="input w-auto" value={filters.status}
+          onChange={(e) => handleFilter('status', e.target.value)}>
           <option value="">All Statuses</option>
           {LEAD_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
+
+        <select className="input w-auto" value={filters.overdue}
+          onChange={(e) => handleFilter('overdue', e.target.value)}>
+          <option value="">All Follow-ups</option>
+          <option value="true">⚠ Overdue Only</option>
+        </select>
+
         {user?.role === 'SUPER_ADMIN' && (
-          <select className="input w-auto" value={filters.doctorId} onChange={(e) => handleFilter('doctorId', e.target.value)}>
+          <select className="input w-auto" value={filters.doctorId}
+            onChange={(e) => handleFilter('doctorId', e.target.value)}>
             <option value="">All Doctors</option>
             {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         )}
-        {(filters.search || filters.status || filters.doctorId) && (
-          <button onClick={() => { setSearchInput(''); setFilters({ search: '', status: '', doctorId: '', page: 1 }); }}
-            className="btn-secondary gap-1.5">
+
+        {hasActiveFilters && (
+          <button onClick={() => {
+            setSearchInput('');
+            setFilters({ search: '', status: '', doctorId: '', overdue: '', assignedUserId: '', page: 1 });
+          }} className="btn-secondary gap-1.5">
             <FunnelIcon className="w-4 h-4" /> Clear
           </button>
         )}
@@ -109,39 +126,21 @@ export default function LeadsPage() {
                     <th className="px-5 py-3 font-medium hidden sm:table-cell">Phone</th>
                     <th className="px-5 py-3 font-medium hidden md:table-cell">Source</th>
                     <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium hidden lg:table-cell">Follow-up</th>
+                    <th className="px-5 py-3 font-medium hidden xl:table-cell">Assigned</th>
                     {user?.role === 'SUPER_ADMIN' && <th className="px-5 py-3 font-medium hidden lg:table-cell">Doctor</th>}
-                    <th className="px-5 py-3 font-medium hidden lg:table-cell">Date</th>
+                    <th className="px-5 py-3 font-medium hidden lg:table-cell">Created</th>
                     <th className="px-5 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {leads.map((lead) => (
-                    <tr key={lead.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3">
-                        <p className="font-medium text-gray-900">{lead.patientName}</p>
-                        {lead.city && <p className="text-xs text-gray-400">{lead.city}</p>}
-                      </td>
-                      <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{lead.phone}</td>
-                      <td className="px-5 py-3 text-gray-500 hidden md:table-cell capitalize">{lead.source || '—'}</td>
-                      <td className="px-5 py-3"><StatusBadge status={lead.status} /></td>
-                      {user?.role === 'SUPER_ADMIN' && (
-                        <td className="px-5 py-3 text-gray-500 hidden lg:table-cell">{lead.doctor?.name}</td>
-                      )}
-                      <td className="px-5 py-3 text-gray-400 hidden lg:table-cell">
-                        {format(new Date(lead.createdAt), 'dd MMM yyyy')}
-                      </td>
-                      <td className="px-5 py-3">
-                        <Link href={`/dashboard/leads/${lead.id}`}
-                          className="text-brand-600 hover:underline text-xs font-medium">
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {leads.map((lead) => <LeadRow key={lead.id} lead={lead} user={user} />)}
                 </tbody>
               </table>
             </div>
-            {leads.length === 0 && <EmptyState title="No leads found" description="Try adjusting your filters or create a new lead." />}
+            {leads.length === 0 && (
+              <EmptyState title="No leads found" description="Try adjusting your filters or create a new lead." />
+            )}
             <div className="px-5 py-4 border-t border-gray-100">
               <Pagination pagination={pagination} onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))} />
             </div>
@@ -149,7 +148,6 @@ export default function LeadsPage() {
         )}
       </div>
 
-      {/* Create modal */}
       <CreateLeadModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
@@ -160,6 +158,76 @@ export default function LeadsPage() {
     </div>
   );
 }
+
+// ── Lead row ──────────────────────────────────────────────────────────────────
+
+function LeadRow({ lead, user }) {
+  const followUpDate = lead.followUpAt ? new Date(lead.followUpAt) : null;
+  const isOverdue    = followUpDate && isPast(followUpDate) && !isToday(followUpDate);
+  const isTodayF     = followUpDate && isToday(followUpDate);
+
+  return (
+    <tr className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/30' : ''}`}>
+      <td className="px-5 py-3">
+        <p className="font-medium text-gray-900">{lead.patientName}</p>
+        {lead.city && <p className="text-xs text-gray-400">{lead.city}</p>}
+      </td>
+      <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{lead.phone}</td>
+      <td className="px-5 py-3 text-gray-500 hidden md:table-cell capitalize">
+        {lead.source || '—'}
+        {lead.campaignName && <p className="text-xs text-gray-400 truncate max-w-[120px]">{lead.campaignName}</p>}
+      </td>
+      <td className="px-5 py-3"><StatusBadge status={lead.status} /></td>
+
+      {/* Follow-up date with overdue / today indicators */}
+      <td className="px-5 py-3 hidden lg:table-cell">
+        {followUpDate ? (
+          <span className={`inline-flex items-center gap-1 text-xs font-medium ${
+            isOverdue ? 'text-red-600' : isTodayF ? 'text-amber-600' : 'text-gray-500'
+          }`}>
+            {isOverdue
+              ? <ExclamationCircleIcon className="w-3.5 h-3.5" />
+              : <ClockIcon className="w-3.5 h-3.5" />}
+            {isOverdue
+              ? `Overdue · ${format(followUpDate, 'dd MMM')}`
+              : isTodayF
+                ? 'Today'
+                : format(followUpDate, 'dd MMM')}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        )}
+      </td>
+
+      {/* Assigned staff */}
+      <td className="px-5 py-3 hidden xl:table-cell">
+        {lead.assignedUser ? (
+          <span className="inline-flex items-center gap-1 text-xs text-gray-600">
+            <UserCircleIcon className="w-3.5 h-3.5 text-gray-400" />
+            {lead.assignedUser.name}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">Unassigned</span>
+        )}
+      </td>
+
+      {user?.role === 'SUPER_ADMIN' && (
+        <td className="px-5 py-3 text-gray-500 hidden lg:table-cell">{lead.doctor?.name}</td>
+      )}
+      <td className="px-5 py-3 text-gray-400 hidden lg:table-cell">
+        {format(new Date(lead.createdAt), 'dd MMM yyyy')}
+      </td>
+      <td className="px-5 py-3">
+        <Link href={`/dashboard/leads/${lead.id}`}
+          className="text-brand-600 hover:underline text-xs font-medium">
+          View
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
+// ── Create modal ──────────────────────────────────────────────────────────────
 
 function CreateLeadModal({ open, onClose, onCreated, user, doctors }) {
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm();

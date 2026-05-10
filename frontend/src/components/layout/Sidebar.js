@@ -2,43 +2,117 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useRole } from '@/hooks/usePermission';
 import clsx from 'clsx';
 import {
   HomeIcon, UserGroupIcon, ClipboardDocumentListIcon,
   CalendarDaysIcon, DocumentTextIcon, Cog6ToothIcon,
-  XMarkIcon, HeartIcon,
+  XMarkIcon, HeartIcon, UsersIcon, BuildingOffice2Icon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 
-const NAV = [
-  { href: '/dashboard',              icon: HomeIcon,                      label: 'Dashboard' },
-  { href: '/dashboard/doctors',      icon: UserGroupIcon,                 label: 'Doctors',      adminOnly: true },
-  { href: '/dashboard/leads',        icon: ClipboardDocumentListIcon,     label: 'Leads' },
-  { href: '/dashboard/appointments', icon: CalendarDaysIcon,              label: 'Appointments' },
-  { href: '/dashboard/blogs',        icon: DocumentTextIcon,              label: 'Blogs' },
-  { href: '/dashboard/settings',     icon: Cog6ToothIcon,                 label: 'Settings' },
+/**
+ * Navigation item definitions.
+ * Visibility is controlled by the `show` function which receives the role context.
+ * Items without `show` are always visible to authenticated users.
+ */
+const NAV_ITEMS = [
+  {
+    href:  '/dashboard',
+    icon:  HomeIcon,
+    label: 'Dashboard',
+  },
+  {
+    href:  '/dashboard/doctors',
+    icon:  UserGroupIcon,
+    label: 'Doctors',
+    // Only MashHealth super admin sees the full doctors list
+    show: ({ isAdmin }) => isAdmin,
+  },
+  {
+    href:  '/dashboard/leads',
+    icon:  ClipboardDocumentListIcon,
+    label: 'Leads',
+  },
+  {
+    href:  '/dashboard/appointments',
+    icon:  CalendarDaysIcon,
+    label: 'Appointments',
+  },
+  {
+    href:  '/dashboard/blogs',
+    icon:  DocumentTextIcon,
+    label: 'Blogs',
+  },
+  {
+    href:  '/dashboard/staff',
+    icon:  UsersIcon,
+    label: 'Staff',
+    // Admin sees all staff across clinics; DOCTOR_ADMIN sees their own staff
+    show: ({ canManageStaff }) => canManageStaff,
+  },
+  {
+    href:  '/dashboard/practice',
+    icon:  BuildingOffice2Icon,
+    label: 'My Practice',
+    // Clinic owners manage their own practice settings here
+    show: ({ isDoctor }) => isDoctor,
+  },
+  {
+    href:  '/dashboard/audit-logs',
+    icon:  ShieldCheckIcon,
+    label: 'Audit Logs',
+    // Platform-level audit trail — super admin only
+    show: ({ isAdmin }) => isAdmin,
+  },
+  {
+    href:  '/dashboard/settings',
+    icon:  Cog6ToothIcon,
+    label: 'Settings',
+  },
 ];
 
 export default function Sidebar({ open, onClose }) {
   const pathname = usePathname();
   const { user }  = useAuth();
+  const roleCtx   = useRole();
 
-  const items = NAV.filter((n) => !n.adminOnly || user?.role === 'SUPER_ADMIN');
+  // Filter nav items based on role
+  const items = NAV_ITEMS.filter((item) =>
+    !item.show || item.show(roleCtx)
+  );
 
   const isActive = (href) =>
     href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
 
+  const roleBadgeColor = {
+    SUPER_ADMIN:  'bg-red-500',
+    DOCTOR_ADMIN: 'bg-brand-600',
+    STAFF:        'bg-slate-600',
+  }[user?.role] ?? 'bg-slate-600';
+
+  const roleLabel = {
+    SUPER_ADMIN:  'Super Admin',
+    DOCTOR_ADMIN: 'Doctor Admin',
+    STAFF:        'Staff',
+  }[user?.role] ?? user?.role;
+
   const content = (
     <div className="flex flex-col h-full bg-slate-900 w-64">
+
       {/* Brand */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-800">
         <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center flex-shrink-0">
           <HeartIcon className="w-5 h-5 text-white" />
         </div>
-        <span className="text-white font-semibold text-lg leading-tight">Healthcare CRM</span>
+        <div className="min-w-0">
+          <p className="text-white font-semibold text-base leading-tight">MashHealth</p>
+          <p className="text-slate-400 text-xs">Healthcare CRM</p>
+        </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {items.map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
@@ -57,20 +131,24 @@ export default function Sidebar({ open, onClose }) {
         ))}
       </nav>
 
-      {/* User info */}
+      {/* User info footer */}
       <div className="px-4 py-4 border-t border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center flex-shrink-0">
+          <div className={clsx(
+            'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+            roleBadgeColor
+          )}>
             <span className="text-white text-xs font-bold">
               {user?.name?.charAt(0).toUpperCase()}
             </span>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-white text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-slate-400 text-xs truncate">{user?.role?.replace('_', ' ')}</p>
+            <p className="text-slate-400 text-xs truncate">{roleLabel}</p>
           </div>
         </div>
       </div>
+
     </div>
   );
 

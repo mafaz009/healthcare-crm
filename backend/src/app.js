@@ -18,13 +18,28 @@ const blogRoutes        = require('./modules/blogs/blogs.routes');
 const dashboardRoutes   = require('./modules/dashboard/dashboard.routes');
 const webhookRoutes     = require('./modules/webhooks/webhooks.routes');
 const publicRoutes      = require('./modules/public/public.routes');
+const staffRoutes       = require('./modules/staff/staff.routes');
+const practiceRoutes    = require('./modules/practice/practice.routes');
+const adminRoutes       = require('./modules/admin/admin.routes');
 
 const app = express();
 app.set('trust proxy', 1);
 
+// ── Proxy trust — MUST be set before rate-limit and any IP-dependent middleware ──
+//
+// We run behind Nginx (reverse proxy). Without this:
+//   - express-rate-limit v7 throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and crashes
+//     every request before any route handler runs.
+//   - req.ip returns the Nginx internal IP instead of the real client IP.
+//   - Secure cookies don't work (sameSite/secure flags).
+//
+// '1' means: trust exactly ONE hop of proxy (Nginx). Reads X-Forwarded-For[0].
+// Do NOT set to 'true' — that trusts all hops and is exploitable.
+app.set('trust proxy', 1);
+
 // ── Request logging ───────────────────────────────────────────────────────────
 // 'dev' in development: "GET /api/leads 200 12ms"
-// 'combined' in production: Apache-style with IP + user-agent (useful for Hostinger logs)
+// 'combined' in production: Apache-style with real client IP (from X-Forwarded-For)
 app.use(morgan(env.isDev ? 'dev' : 'combined'));
 
 // ── Security headers ──────────────────────────────────────────────────────────
@@ -49,6 +64,8 @@ app.use(
 );
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
+// trust proxy (set above) ensures req.ip is the real client IP, not Nginx's IP.
+// Without trust proxy, rate-limit v7 throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -57,7 +74,7 @@ app.use('/api', rateLimit({
   message: { success: false, message: 'Too many requests. Please try again later.' },
 }));
 
-// Tighter limit on auth to prevent brute-force
+// Tighter limit on auth endpoint to prevent brute-force
 app.use('/api/auth', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -108,6 +125,9 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/blogs',        blogRoutes);
 app.use('/api/dashboard',    dashboardRoutes);
 app.use('/api/public',       publicRoutes);
+app.use('/api/staff',        staffRoutes);    // DOCTOR_ADMIN manages own staff
+app.use('/api/practice',     practiceRoutes); // DOCTOR_ADMIN manages own clinic profile
+app.use('/api/admin',        adminRoutes);    // SUPER_ADMIN global management + audit logs
 app.use('/api',              webhookRoutes);
 
 // ── 404 + global error ────────────────────────────────────────────────────────

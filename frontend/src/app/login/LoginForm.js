@@ -16,10 +16,11 @@ export default function LoginForm() {
     formState: { errors },
   } = useForm();
 
-  const onSubmit = async ({ email, password }) => {
+  const onSubmit = async ({ identifier, password }) => {
     setLoading(true);
     try {
-      const user = await login(email, password);
+      // Pass identifier as-is — the backend detects email vs loginId via '@'
+      const user = await login(identifier, password);
       toast.success(`Welcome back, ${user.name}!`);
       router.push('/dashboard');
     } catch (err) {
@@ -42,7 +43,7 @@ export default function LoginForm() {
                 d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white">Healthcare CRM</h1>
+          <h1 className="text-3xl font-bold text-white">MashHealth CRM</h1>
           <p className="text-brand-100 mt-1 text-sm">Sign in to your dashboard</p>
         </div>
 
@@ -50,25 +51,33 @@ export default function LoginForm() {
         <div className="card p-8">
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
 
+            {/* Username or Email — accepts both */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email address
+                Username or Email
               </label>
               <input
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                className={`input ${errors.email ? 'border-red-500 focus:ring-red-500' : ''}`}
-                {...register('email', {
-                  required: 'Email is required',
-                  pattern: { value: /\S+@\S+\.\S+/, message: 'Enter a valid email' },
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="dr.manmeet  or  you@example.com"
+                className={`input ${errors.identifier ? 'border-red-500 focus:ring-red-500' : ''}`}
+                {...register('identifier', {
+                  required: 'Username or email is required',
+                  minLength: { value: 2, message: 'Enter a valid username or email' },
                 })}
               />
-              {errors.email && (
-                <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>
+              {errors.identifier && (
+                <p className="mt-1 text-xs text-red-600">{errors.identifier.message}</p>
               )}
+              <p className="mt-1 text-xs text-gray-400">
+                Use your username (e.g. <span className="font-mono">dr.manmeet</span>) or email address
+              </p>
             </div>
 
+            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Password
@@ -107,7 +116,7 @@ export default function LoginForm() {
         </div>
 
         <p className="text-center text-brand-200 text-xs mt-6">
-          Healthcare CRM &copy; {new Date().getFullYear()}
+          MashHealth CRM &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

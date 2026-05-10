@@ -2,11 +2,12 @@ const bcrypt  = require('bcryptjs');
 const prisma  = require('../../config/database');
 const { generate: generateApiKey } = require('../../utils/apiKey');
 const { paginate, paginationMeta } = require('../../utils/pagination');
+const { uniqueLoginId } = require('../../utils/loginId');
 
 const DOCTOR_SELECT = {
   id: true, name: true, specialty: true, domain: true,
   email: true, phone: true, status: true, logoUrl: true,
-  address: true, apiKey: true, createdAt: true, updatedAt: true,
+  address: true, apiKey: true, plan: true, createdAt: true, updatedAt: true,
 };
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -52,6 +53,11 @@ const create = async (data) => {
   const hashed   = await bcrypt.hash(password, 12);
   const apiKey   = generateApiKey();
 
+  // Generate a unique loginId for the doctor's user account.
+  // Derived from the doctor's name: "Dr. Manmeet Singh" → "dr.manmeet.singh"
+  // Appends ".2", ".3", … if the derived name is already taken.
+  const loginId = await uniqueLoginId(name);
+
   // Create doctor and their user account in one transaction
   const doctor = await prisma.$transaction(async (tx) => {
     const doc = await tx.doctor.create({
@@ -61,8 +67,8 @@ const create = async (data) => {
 
     await tx.user.create({
       data: {
-        name, email, password: hashed,
-        role: 'DOCTOR',
+        name, loginId, email, password: hashed,
+        role: 'DOCTOR_ADMIN',
         doctorId: doc.id,
       },
     });
@@ -70,8 +76,8 @@ const create = async (data) => {
     return doc;
   });
 
-  // Return the plain-text password once — never stored, not repeatable
-  return { doctor, tempPassword: password };
+  // Return the plain-text password and loginId once — never stored, not repeatable
+  return { doctor, tempPassword: password, loginId };
 };
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -128,13 +134,14 @@ const createStaffUser = async (doctorId, { name, email, loginPassword }) => {
 
   const password = loginPassword || generateTempPassword();
   const hashed   = await bcrypt.hash(password, 12);
+  const loginId  = await uniqueLoginId(name);
 
   const user = await prisma.user.create({
-    data: { name, email, password: hashed, role: 'STAFF', doctorId },
-    select: { id: true, name: true, email: true, role: true, doctorId: true, createdAt: true },
+    data: { name, loginId, email, password: hashed, role: 'STAFF', doctorId },
+    select: { id: true, name: true, loginId: true, email: true, role: true, doctorId: true, createdAt: true },
   });
 
-  return { user, tempPassword: password };
+  return { user, tempPassword: password, loginId };
 };
 
 // ── List staff for a doctor ───────────────────────────────────────────────────

@@ -12,23 +12,33 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum Role {
-  SUPER_ADMIN
-  DOCTOR
-  STAFF
+  SUPER_ADMIN   // MashHealth platform admin — no doctorId, sees everything
+  DOCTOR_ADMIN  // Clinic owner/doctor — has doctorId, manages own tenant
+  STAFF         // Receptionist/coordinator — has doctorId, scoped capabilities
 }
 
 enum DoctorStatus {
-  ACTIVE
-  INACTIVE
+  ACTIVE     // Fully operational
+  INACTIVE   // Soft-disabled (not deleted)
+  SUSPENDED  // Billing/compliance hold — API key auth also rejected
+}
+
+// Future-proofing: plan tier controls feature access (no billing logic yet)
+enum PlanTier {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
 }
 
 enum LeadStatus {
-  NEW
-  CONTACTED
-  FOLLOW_UP
-  APPOINTMENT_BOOKED
-  CONVERTED
-  LOST
+  NEW                // Just entered the system
+  CONTACTED          // First contact made
+  FOLLOW_UP          // Needs a follow-up call/message
+  INTERESTED         // Expressed genuine interest
+  APPOINTMENT_BOOKED // Appointment scheduled
+  NO_RESPONSE        // Tried but couldn't reach
+  NOT_INTERESTED     // Explicitly declined
+  CLOSED             // Deal closed / converted to patient
 }
 
 enum AppointmentStatus {
@@ -49,53 +59,121 @@ enum BlogStatus {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String   @db.VarChar(150)
-  email     String   @unique @db.VarChar(255)
-  password  String   @db.VarChar(255)
-  role      Role     @default(STAFF)
-  isActive  Boolean  @default(true)
+  id       Int     @id @default(autoincrement())
+  name     String  @db.VarChar(150)
 
-  // NULL for SUPER_ADMIN; set for DOCTOR and STAFF accounts
-  doctorId  Int?
-  doctor    Doctor?  @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+  // ── Authentication identity ────────────────────────────────────────────────
+  // loginId  → PRIMARY login username. Typed into the "Username or Email" field.
+  //            Lowercase alphanumeric + . _ -   (3–50 chars, starts/ends alphanumeric)
+  //            Examples: admin · dr.manmeet · staff.priya.2
+  //            Auto-generated from name on create. Editable by the user.
+  loginId  String  @unique @db.VarChar(50)
+
+  // email    → CONTACT address only. Used for notifications and future password-reset.
+  //            Still accepted at login for backward compatibility (smart detection).
+  //            NOT the primary auth key — loginId is.
+  email    String  @unique @db.VarChar(255)
+
+  password String  @db.VarChar(255)
+  role     Role    @default(STAFF)
+  isActive Boolean @default(true)
+
+  // NULL for SUPER_ADMIN; required for DOCTOR_ADMIN and STAFF
+  doctorId Int?
+  doctor   Doctor? @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  // Token version: increment to instantly invalidate all existing JWTs for this user.
+  // Use cases: password change, account disable, suspicious activity, forced re-login.
+  tokenVersion Int @default(0)
+
+  // Last login tracking for security monitoring and inactive account detection.
+  lastLoginAt DateTime?
+
+  // Per-staff permission overrides (null = use STAFF role defaults).
+  // Only meaningful for STAFF role. DOCTOR_ADMIN and SUPER_ADMIN ignore this.
+  // Shape: {"leads":{"delete":true},"blogs":{"publish":true,"delete":false}}
+  // A missing key means "use role default". Explicit false overrides the default.
+  permissions Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leadComments LeadComment[]
+  leadComments       LeadComment[]
+  leadFollowUps      LeadFollowUp[]
+  leadStatusChanges  LeadStatusHistory[]
+  assignedLeads      Lead[]              @relation("AssignedLeads")
+  auditLogs          AuditLog[]
 
   @@index([doctorId])
+  @@index([email])
   @@map("users")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DOCTORS  (one row per client / doctor)
+// DOCTORS  (one row per client — the tenant unit)
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Doctor {
   id        Int          @id @default(autoincrement())
   name      String       @db.VarChar(150)
   specialty String       @db.VarChar(150)
-  domain    String       @db.VarChar(255)   // e.g. "doctorabc.com"
+  domain    String       @db.VarChar(255) // e.g. "urologybymanmeet.com"
   email     String       @unique @db.VarChar(255)
   phone     String?      @db.VarChar(20)
   status    DoctorStatus @default(ACTIVE)
   logoUrl   String?      @db.VarChar(500)
   address   String?      @db.Text
 
-  // API key for external website integration (generated on create)
-  apiKey    String       @unique @db.VarChar(64)
+  // Plan tier — no enforcement logic yet, but used for UI feature gates later
+  plan PlanTier @default(BASIC)
 
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  // External website integration key — passed as X-Api-Key header by PHP websites.
+  // Rejected if doctor status is SUSPENDED (enforced in apiKeyAuth middleware).
+  apiKey String @unique @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   users        User[]
   leads        Lead[]
   appointments Appointment[]
   blogs        Blog[]
+  auditLogs    AuditLog[]
 
   @@map("doctors")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOG  (immutable append-only record of sensitive actions)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Captures: who did what, to which resource, on which tenant, from which IP.
+// Written by the auditLog() middleware applied to sensitive routes.
+// SUPER_ADMIN actions are always logged. Useful for forensics and compliance.
+//
+// action format: "resource.verb" e.g. "lead.delete", "blog.publish", "staff.create"
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  action     String   @db.VarChar(100)
+  resourceId Int?     // ID of the affected row (lead.id, blog.id, etc.)
+  metadata   Json?    // extra context — old status, new status, patient name, etc.
+  ipAddress  String?  @db.VarChar(45) // IPv4 or IPv6
+
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Which tenant's data was affected — NULL for SUPER_ADMIN global actions
+  doctorId Int?
+  doctor   Doctor? @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([doctorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,43 +186,128 @@ model Lead {
   phone        String     @db.VarChar(20)
   email        String?    @db.VarChar(255)
   city         String?    @db.VarChar(100)
-  source       String?    @db.VarChar(100)      // facebook, google, walk-in, referral …
-  campaignName String?    @db.VarChar(200)
   status       LeadStatus @default(NEW)
 
-  doctorId     Int
-  doctor       Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  // ── Source & Attribution ──────────────────────────────────────────────────
+  // Human-readable source label used in the UI (facebook, google, walk-in…)
+  source       String?    @db.VarChar(100)
+  campaignName String?    @db.VarChar(200)
 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  // UTM parameters — auto-populated from landing page URLs or webhook payloads
+  utmSource   String? @db.VarChar(255) // utm_source
+  utmMedium   String? @db.VarChar(255) // utm_medium
+  utmCampaign String? @db.VarChar(255) // utm_campaign
+  utmContent  String? @db.VarChar(255) // utm_content
+  utmTerm     String? @db.VarChar(255) // utm_term
 
-  comments     LeadComment[]
+  // Paid ads metadata (Meta / Google)
+  adSet      String? @db.VarChar(200)
+  adName     String? @db.VarChar(200)
+  landingPage String? @db.VarChar(500)
+
+  // External platform ID — Meta lead_id, Google click ID (gclid), etc.
+  externalId String? @db.VarChar(150)
+
+  // ── Follow-up ─────────────────────────────────────────────────────────────
+  // Denormalised "next follow-up at" for fast dashboard queries
+  followUpAt DateTime?
+
+  // ── Assignment ───────────────────────────────────────────────────────────
+  assignedUserId Int?
+  assignedUser   User? @relation("AssignedLeads", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments      LeadComment[]
+  followUps     LeadFollowUp[]
+  statusHistory LeadStatusHistory[]
 
   @@index([doctorId])
   @@index([status])
   @@index([doctorId, status])
+  @@index([assignedUserId])
+  @@index([followUpAt])
   @@index([createdAt])
   @@map("leads")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LEAD COMMENTS  (separate table so multiple notes can be added over time)
+// LEAD COMMENTS  (free-text notes on a lead — appended to the timeline)
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LeadComment {
-  id        Int      @id @default(autoincrement())
-  comment   String   @db.Text
+  id      Int    @id @default(autoincrement())
+  comment String @db.Text
 
-  leadId    Int
-  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId Int
+  lead   Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
   @@index([leadId])
   @@map("lead_comments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAD FOLLOW-UPS  (scheduled call-back / callback tasks)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Each row is one scheduled follow-up task.
+// completedAt NULL  → pending / overdue
+// completedAt set   → done
+// note        → what the staff member should discuss / what was discussed
+
+model LeadFollowUp {
+  id          Int       @id @default(autoincrement())
+  scheduledAt DateTime              // when to follow up
+  completedAt DateTime?             // NULL = pending
+  note        String?   @db.Text   // optional instructions / outcome
+
+  leadId Int
+  lead   Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  // The staff member who scheduled (or is responsible for) this follow-up
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([scheduledAt])
+  @@index([completedAt])
+  @@map("lead_follow_ups")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEAD STATUS HISTORY  (immutable audit trail of every status transition)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LeadStatusHistory {
+  id         Int        @id @default(autoincrement())
+  fromStatus LeadStatus?          // NULL on first creation
+  toStatus   LeadStatus
+  note       String?    @db.VarChar(500)  // optional reason / context
+
+  leadId Int
+  lead   Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  changedById Int
+  changedBy   User @relation(fields: [changedById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([changedById])
+  @@map("lead_status_history")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,16 +321,16 @@ model Appointment {
   email         String?           @db.VarChar(255)
   issue         String?           @db.Text
   preferredDate DateTime          @db.Date
-  preferredTime String?           @db.VarChar(10)  // "10:30 AM"
+  preferredTime String?           @db.VarChar(10) // "10:30 AM"
   status        AppointmentStatus @default(PENDING)
   notes         String?           @db.Text
   source        String?           @db.VarChar(100) // website, phone, walk-in, api
 
-  doctorId      Int
-  doctor        Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([doctorId])
   @@index([status])
@@ -181,30 +344,27 @@ model Appointment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Blog {
-  id              Int        @id @default(autoincrement())
-  title           String     @db.VarChar(300)
+  id    Int    @id @default(autoincrement())
+  title String @db.VarChar(300)
 
   // Slug is unique PER doctor — two doctors can both have /blog/knee-pain
-  slug            String     @db.VarChar(350)
+  slug String @db.VarChar(350)
 
-  featuredImage   String?    @db.VarChar(500)
-  content         String     @db.LongText
+  featuredImage   String? @db.VarChar(500)
+  content         String  @db.LongText
+  seoTitle        String? @db.VarChar(70)
+  metaDescription String? @db.VarChar(160)
+  keywords        String? @db.VarChar(500)
 
-  // SEO fields  (160 chars for meta desc, 70 for title — industry standard limits)
-  seoTitle        String?    @db.VarChar(70)
-  metaDescription String?    @db.VarChar(160)
-  keywords        String?    @db.VarChar(500)
+  status      BlogStatus @default(DRAFT)
+  publishedAt DateTime?
 
-  status          BlogStatus @default(DRAFT)
-  publishedAt     DateTime?
+  doctorId Int
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
-  doctorId        Int
-  doctor          Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  // Compound unique: same slug allowed across different doctors
   @@unique([slug, doctorId])
   @@index([doctorId])
   @@index([status])

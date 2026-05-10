@@ -29,8 +29,9 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post('/api/auth/login', { email, password });
+  // identifier: loginId ("dr.manmeet") or email ("dr@clinic.com") — backend detects which
+  const login = async (identifier, password) => {
+    const { data } = await api.post('/api/auth/login', { identifier, password });
     setSession(data.data.token, data.data.user);
     setUser(data.data.user);
     return data.data.user;

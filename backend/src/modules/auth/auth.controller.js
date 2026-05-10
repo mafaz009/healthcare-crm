@@ -3,8 +3,9 @@ const { ok, error } = require('../../utils/response');
 
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const result = await authService.login(email, password);
+    // `identifier` is either a loginId (no @) or an email (contains @)
+    const { identifier, password } = req.body;
+    const result = await authService.login(identifier, password);
     return ok(res, result, 'Login successful');
   } catch (err) {
     return error(res, err.message, err.statusCode || 500);

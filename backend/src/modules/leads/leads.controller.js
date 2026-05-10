@@ -26,7 +26,7 @@ const create = async (req, res) => {
       ? req.body
       : { ...req.body, doctorId: req.user.doctorId };
 
-    const lead = await svc.create(data);
+    const lead = await svc.create(data, req.user);
     return created(res, lead, 'Lead created successfully');
   } catch (err) {
     return error(res, err.message, err.statusCode || 500);
@@ -44,8 +44,27 @@ const update = async (req, res) => {
 
 const updateStatus = async (req, res) => {
   try {
-    const lead = await svc.updateStatus(parseInt(req.params.id), req.body.status, req.tenantFilter);
+    const lead = await svc.updateStatus(
+      parseInt(req.params.id),
+      req.body.status,
+      req.user.id,
+      req.body.note,
+      req.tenantFilter
+    );
     return ok(res, lead, 'Lead status updated');
+  } catch (err) {
+    return error(res, err.message, err.statusCode || 500);
+  }
+};
+
+const assign = async (req, res) => {
+  try {
+    const lead = await svc.assign(
+      parseInt(req.params.id),
+      req.body.assignedUserId ?? null,
+      req.tenantFilter
+    );
+    return ok(res, lead, 'Lead assignment updated');
   } catch (err) {
     return error(res, err.message, err.statusCode || 500);
   }
@@ -83,6 +102,43 @@ const deleteComment = async (req, res) => {
   }
 };
 
+const createFollowUp = async (req, res) => {
+  try {
+    const followUp = await svc.createFollowUp(
+      parseInt(req.params.id),
+      req.user.id,
+      { scheduledAt: req.body.scheduledAt, note: req.body.note },
+      req.tenantFilter
+    );
+    return created(res, followUp, 'Follow-up scheduled');
+  } catch (err) {
+    return error(res, err.message, err.statusCode || 500);
+  }
+};
+
+const completeFollowUp = async (req, res) => {
+  try {
+    const followUp = await svc.completeFollowUp(
+      parseInt(req.params.followUpId),
+      req.user.id,
+      req.body.note,
+      req.tenantFilter
+    );
+    return ok(res, followUp, 'Follow-up marked as complete');
+  } catch (err) {
+    return error(res, err.message, err.statusCode || 500);
+  }
+};
+
+const deleteFollowUp = async (req, res) => {
+  try {
+    await svc.deleteFollowUp(parseInt(req.params.followUpId), req.user.role, req.tenantFilter);
+    return ok(res, {}, 'Follow-up deleted');
+  } catch (err) {
+    return error(res, err.message, err.statusCode || 500);
+  }
+};
+
 const getStatusCounts = async (req, res) => {
   try {
     const counts = await svc.getStatusCounts(req.tenantFilter);
@@ -92,4 +148,9 @@ const getStatusCounts = async (req, res) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, updateStatus, remove, addComment, deleteComment, getStatusCounts };
+module.exports = {
+  getAll, getById, create, update, updateStatus, assign, remove,
+  addComment, deleteComment,
+  createFollowUp, completeFollowUp, deleteFollowUp,
+  getStatusCounts,
+};

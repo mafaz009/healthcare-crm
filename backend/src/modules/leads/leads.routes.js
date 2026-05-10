@@ -1,28 +1,37 @@
 const router = require('express').Router();
 const { body, param, query } = require('express-validator');
 const ctrl   = require('./leads.controller');
-const { protect, allowRoles, tenantFilter } = require('../../middleware/auth');
+const { protect, tenantFilter, requirePermission } = require('../../middleware/auth');
+const { auditLog } = require('../../middleware/auditLog');
 const validate = require('../../middleware/validate');
 
-const VALID_STATUSES = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'APPOINTMENT_BOOKED', 'CONVERTED', 'LOST'];
+const VALID_STATUSES = [
+  'NEW', 'CONTACTED', 'FOLLOW_UP', 'INTERESTED',
+  'APPOINTMENT_BOOKED', 'NO_RESPONSE', 'NOT_INTERESTED', 'CLOSED',
+];
 
-// All lead routes require login + tenant scoping
+// Base auth: verify JWT + attach tenantFilter. Applied to every lead route.
 const auth = [protect, tenantFilter];
 
-const idParam    = param('id').isInt({ min: 1 }).withMessage('Invalid lead ID');
-const commentId  = param('commentId').isInt({ min: 1 }).withMessage('Invalid comment ID');
+const idParam       = param('id').isInt({ min: 1 }).withMessage('Invalid lead ID');
+const commentIdPrm  = param('commentId').isInt({ min: 1 }).withMessage('Invalid comment ID');
+const followUpIdPrm = param('followUpId').isInt({ min: 1 }).withMessage('Invalid follow-up ID');
 
-// ── GET /api/leads  (list with filters) ──────────────────────────────────────
+// ── GET /api/leads ────────────────────────────────────────────────────────────
 router.get('/', auth, [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('status').optional().isIn(VALID_STATUSES).withMessage('Invalid status'),
   query('dateFrom').optional().isISO8601().withMessage('dateFrom must be a valid date'),
   query('dateTo').optional().isISO8601().withMessage('dateTo must be a valid date'),
+  query('doctorId').optional().isInt({ min: 1 }),
+  query('assignedUserId').optional().isInt({ min: 1 }),
+  query('hasFollowUp').optional().isIn(['true', 'false']),
+  query('overdue').optional().isIn(['true', 'false']),
 ], validate, ctrl.getAll);
 
-// ── GET /api/leads/status-counts  (pipeline summary) ─────────────────────────
-// Must be defined BEFORE /:id to avoid Express treating "status-counts" as an ID
+// ── GET /api/leads/status-counts ──────────────────────────────────────────────
+// Must be BEFORE /:id to prevent "status-counts" being parsed as an ID
 router.get('/status-counts', auth, ctrl.getStatusCounts);
 
 // ── GET /api/leads/:id ────────────────────────────────────────────────────────
@@ -36,6 +45,22 @@ router.post('/', auth, [
   body('doctorId').if((_, { req }) => req.user.role === 'SUPER_ADMIN')
     .notEmpty().withMessage('doctorId is required for admin').isInt({ min: 1 }),
   body('status').optional().isIn(VALID_STATUSES).withMessage('Invalid status'),
+  body('source').optional().trim(),
+  body('city').optional().trim(),
+  body('campaignName').optional().trim(),
+  // UTM params
+  body('utmSource').optional().trim(),
+  body('utmMedium').optional().trim(),
+  body('utmCampaign').optional().trim(),
+  body('utmContent').optional().trim(),
+  body('utmTerm').optional().trim(),
+  // Ads metadata
+  body('adSet').optional().trim(),
+  body('adName').optional().trim(),
+  body('landingPage').optional().trim(),
+  body('externalId').optional().trim(),
+  // Assignment
+  body('assignedUserId').optional({ checkFalsy: true }).isInt({ min: 1 }),
 ], validate, ctrl.create);
 
 // ── PUT /api/leads/:id ────────────────────────────────────────────────────────
@@ -44,16 +69,44 @@ router.put('/:id', auth, [
   body('patientName').optional().trim().notEmpty(),
   body('phone').optional().trim().notEmpty(),
   body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail(),
+  body('city').optional().trim(),
+  body('source').optional().trim(),
+  body('campaignName').optional().trim(),
+  body('utmSource').optional().trim(),
+  body('utmMedium').optional().trim(),
+  body('utmCampaign').optional().trim(),
+  body('utmContent').optional().trim(),
+  body('utmTerm').optional().trim(),
+  body('adSet').optional().trim(),
+  body('adName').optional().trim(),
+  body('landingPage').optional().trim(),
+  body('externalId').optional().trim(),
 ], validate, ctrl.update);
 
 // ── PATCH /api/leads/:id/status ───────────────────────────────────────────────
 router.patch('/:id/status', auth, [
   idParam,
   body('status').isIn(VALID_STATUSES).withMessage('Invalid status value'),
+  body('note').optional().trim().isLength({ max: 500 }),
 ], validate, ctrl.updateStatus);
 
-// ── DELETE /api/leads/:id  (admin only) ───────────────────────────────────────
-router.delete('/:id', [protect, allowRoles('SUPER_ADMIN'), tenantFilter], [idParam], validate, ctrl.remove);
+// ── PATCH /api/leads/:id/assign ───────────────────────────────────────────────
+// Assign or un-assign a staff member to this lead.
+// Pass null/empty assignedUserId to un-assign.
+router.patch('/:id/assign', auth, [
+  idParam,
+  body('assignedUserId').optional({ nullable: true }).isInt({ min: 1 }).withMessage('Invalid user ID'),
+], validate, ctrl.assign);
+
+// ── DELETE /api/leads/:id ─────────────────────────────────────────────────────
+router.delete(
+  '/:id',
+  auth,
+  requirePermission('leads', 'delete'),
+  [idParam], validate,
+  auditLog('lead.delete', (req) => ({ leadId: req.params.id })),
+  ctrl.remove
+);
 
 // ── POST /api/leads/:id/comments ──────────────────────────────────────────────
 router.post('/:id/comments', auth, [
@@ -63,6 +116,24 @@ router.post('/:id/comments', auth, [
 ], validate, ctrl.addComment);
 
 // ── DELETE /api/leads/:id/comments/:commentId ─────────────────────────────────
-router.delete('/:id/comments/:commentId', auth, [idParam, commentId], validate, ctrl.deleteComment);
+router.delete('/:id/comments/:commentId', auth, [idParam, commentIdPrm], validate, ctrl.deleteComment);
+
+// ── POST /api/leads/:id/follow-ups ────────────────────────────────────────────
+// Schedule a follow-up call / callback reminder.
+router.post('/:id/follow-ups', auth, [
+  idParam,
+  body('scheduledAt').isISO8601().withMessage('scheduledAt must be a valid ISO date'),
+  body('note').optional().trim().isLength({ max: 1000 }),
+], validate, ctrl.createFollowUp);
+
+// ── PATCH /api/leads/:id/follow-ups/:followUpId/complete ──────────────────────
+// Mark a follow-up as done (sets completedAt = now).
+router.patch('/:id/follow-ups/:followUpId/complete', auth, [
+  idParam, followUpIdPrm,
+  body('note').optional().trim().isLength({ max: 1000 }),
+], validate, ctrl.completeFollowUp);
+
+// ── DELETE /api/leads/:id/follow-ups/:followUpId ──────────────────────────────
+router.delete('/:id/follow-ups/:followUpId', auth, [idParam, followUpIdPrm], validate, ctrl.deleteFollowUp);
 
 module.exports = router;
