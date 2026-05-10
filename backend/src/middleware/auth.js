@@ -68,9 +68,17 @@ const tenantFilter = (req, _res, next) => {
  * Validate external website API key (used by doctor websites to fetch blogs/submit forms).
  * Attaches req.doctor to the request.
  */
+/**
+ * Accepts the API key from either:
+ *   1. X-Api-Key request header  ← preferred for production PHP/server calls
+ *   2. ?apiKey= query parameter  ← useful for browser testing and simple integrations
+ *
+ * Header takes priority if both are present.
+ * The key must belong to an ACTIVE doctor.
+ */
 const apiKeyAuth = async (req, res, next) => {
-  const key = req.headers['x-api-key'];
-  if (!key) return unauthorized(res, 'API key required');
+  const key = req.headers['x-api-key'] || req.query.apiKey;
+  if (!key) return unauthorized(res, 'API key required. Pass X-Api-Key header or ?apiKey= query param.');
 
   const doctor = await prisma.doctor.findUnique({
     where: { apiKey: key },
