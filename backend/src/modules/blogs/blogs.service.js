@@ -198,19 +198,28 @@ const remove = async (id, tenantFilter) => {
 // PUBLIC API  (used by doctor websites for SEO server-side rendering)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Strip HTML tags and collapse whitespace — used to generate plain-text excerpts
+const stripHtml = (html) => (html || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+
+// Returns absolute URL for a stored image path, or null
+const absoluteImageUrl = (path) => (path ? `${env.API_BASE_URL}${path}` : null);
+
 // List published blogs for a doctor
 const getPublished = async (doctorId, query) => {
   const { skip, take, page, limit } = paginate(query);
 
   const where = { doctorId, status: 'PUBLISHED' };
 
-  const [blogs, total] = await prisma.$transaction([
+  const [rawBlogs, total] = await prisma.$transaction([
     prisma.blog.findMany({
       where,
-      // No content in list — too heavy; website renders list page from these fields
+      // Select a small content slice only to derive excerpt when metaDescription is absent.
+      // Full content is NOT returned in the list — only used server-side for excerpt generation.
       select: {
         id: true, title: true, slug: true, featuredImage: true,
-        seoTitle: true, metaDescription: true, keywords: true, publishedAt: true,
+        seoTitle: true, metaDescription: true, keywords: true,
+        publishedAt: true, createdAt: true,
+        content: true,                          // used for excerpt only, stripped below
         doctor: { select: { name: true, specialty: true, domain: true } },
       },
       skip, take,
@@ -219,12 +228,21 @@ const getPublished = async (doctorId, query) => {
     prisma.blog.count({ where }),
   ]);
 
+  // Shape each blog for public consumption — no raw content in the response
+  const blogs = rawBlogs.map(({ content, featuredImage, ...blog }) => ({
+    ...blog,
+    featuredImage: absoluteImageUrl(featuredImage),
+    // excerpt: prefer the manually written metaDescription; fall back to first 160 chars of content
+    excerpt: blog.metaDescription || stripHtml(content).slice(0, 160),
+    author: blog.doctor.name,
+  }));
+
   return { blogs, pagination: paginationMeta(total, page, limit) };
 };
 
 // Single published blog by slug — returns full content + pre-built SEO package
 const getPublishedBySlug = async (slug, doctorId) => {
-  const blog = await prisma.blog.findFirst({
+  const raw = await prisma.blog.findFirst({
     where: { slug, doctorId, status: 'PUBLISHED' },
     select: {
       ...BLOG_FULL_SELECT,
@@ -233,50 +251,64 @@ const getPublishedBySlug = async (slug, doctorId) => {
       },
     },
   });
-  if (!blog) throw { statusCode: 404, message: 'Blog post not found' };
+  if (!raw) throw { statusCode: 404, message: 'Blog post not found' };
 
-  const domain     = blog.doctor.domain;
-  const canonical  = `https://${domain}/blog/${slug}`;
-  const imageUrl   = blog.featuredImage
-    ? `${env.API_BASE_URL}${blog.featuredImage}`
-    : null;
+  const domain    = raw.doctor.domain;
+  const canonical = `https://${domain}/blog/${slug}`;
+  const imageUrl  = absoluteImageUrl(raw.featuredImage);
+
+  // Plain-text excerpt: manual metaDescription > first 160 chars of content
+  const excerpt = raw.metaDescription || stripHtml(raw.content).slice(0, 160);
+
+  // Reading time: ~200 words per minute, minimum 1 minute
+  const wordCount   = stripHtml(raw.content).split(/\s+/).filter(Boolean).length;
+  const readingTime = Math.max(1, Math.ceil(wordCount / 200));
+
+  // Clean blog object — absolute image URL, excerpt + readingTime + author at top level
+  const blog = {
+    ...raw,
+    featuredImage: imageUrl,
+    excerpt,
+    readingTime,
+    author: raw.doctor.name,
+  };
 
   const seoPackage = {
-    title:           blog.seoTitle || blog.title,
-    metaDescription: blog.metaDescription || '',
+    title:           raw.seoTitle || raw.title,
+    metaDescription: raw.metaDescription || '',
     canonical,
-    keywords:        blog.keywords || '',
+    keywords:        raw.keywords || '',
 
     openGraph: {
       type:        'article',
-      title:       blog.seoTitle || blog.title,
-      description: blog.metaDescription || '',
+      title:       raw.seoTitle || raw.title,
+      description: raw.metaDescription || '',
       url:         canonical,
       image:       imageUrl,
-      siteName:    `Dr. ${blog.doctor.name}`,
-      publishedAt: blog.publishedAt,
-      modifiedAt:  blog.updatedAt,
+      siteName:    `Dr. ${raw.doctor.name}`,
+      publishedAt: raw.publishedAt,
+      modifiedAt:  raw.updatedAt,
     },
 
-    // JSON-LD Article schema — paste directly into <script type="application/ld+json">
+    // JSON-LD Article schema — drop into <script type="application/ld+json">
     schema: {
-      '@context':       'https://schema.org',
-      '@type':          'Article',
-      headline:         blog.title,
-      description:      blog.metaDescription || '',
-      image:            imageUrl ? [imageUrl] : undefined,
-      datePublished:    blog.publishedAt,
-      dateModified:     blog.updatedAt,
+      '@context':    'https://schema.org',
+      '@type':       'Article',
+      headline:      raw.title,
+      description:   raw.metaDescription || '',
+      image:         imageUrl ? [imageUrl] : undefined,
+      datePublished: raw.publishedAt,
+      dateModified:  raw.updatedAt,
       author: {
-        '@type': 'Person',
-        name:    blog.doctor.name,
-        jobTitle: blog.doctor.specialty,
-        url:     `https://${domain}`,
+        '@type':   'Person',
+        name:      raw.doctor.name,
+        jobTitle:  raw.doctor.specialty,
+        url:       `https://${domain}`,
       },
       publisher: {
         '@type': 'Person',
-        name:    blog.doctor.name,
-        image:   blog.doctor.logoUrl || undefined,
+        name:    raw.doctor.name,
+        image:   raw.doctor.logoUrl || undefined,
       },
       mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
     },
@@ -286,9 +318,9 @@ const getPublishedBySlug = async (slug, doctorId) => {
       '@context': 'https://schema.org',
       '@type':    'BreadcrumbList',
       itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Home',  item: `https://${domain}` },
-        { '@type': 'ListItem', position: 2, name: 'Blog',  item: `https://${domain}/blog` },
-        { '@type': 'ListItem', position: 3, name: blog.title, item: canonical },
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `https://${domain}` },
+        { '@type': 'ListItem', position: 2, name: 'Blog', item: `https://${domain}/blog` },
+        { '@type': 'ListItem', position: 3, name: raw.title, item: canonical },
       ],
     },
   };
