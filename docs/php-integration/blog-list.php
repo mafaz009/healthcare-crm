@@ -1,32 +1,36 @@
 <?php
 /**
- * blog-list.php — Blog archive page for urologybymanmeet.com
+ * blog-list.php — Blog archive page
+ * ───────────────────────────────────────────────────────────────
+ * WHERE THIS FILE GOES:
+ *   Rename to: /blog/index.php  on the doctor's website
+ *   (the /blog/ directory should already exist or create it)
  *
- * Place this file (or copy its logic) wherever your blog listing lives.
- * Include CrmApi.php first — adjust the path to match your file structure.
+ * HOW URLS WORK:
+ *   urologybymanmeet.com/blog/          → this file, page 1
+ *   urologybymanmeet.com/blog/?page=2   → this file, page 2
  *
- * URL pattern this page handles:
- *   /blog/           → page 1
- *   /blog/?page=2    → page 2
+ * REQUIRES:
+ *   CrmApi.php must be uploaded to /includes/CrmApi.php
+ *   Adjust the require_once path below to match your server layout.
+ * ───────────────────────────────────────────────────────────────
  */
 
-require_once __DIR__ . '/CrmApi.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/includes/CrmApi.php';
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 $currentPage = max(1, (int)($_GET['page'] ?? 1));
-$perPage     = 9; // 3×3 grid
+$perPage     = 9;   // how many posts per page
 
-// ── Fetch from CRM ────────────────────────────────────────────────────────────
-$result = CrmApi::getBlogs($currentPage, $perPage);
+// ── Fetch blogs from CRM ──────────────────────────────────────────────────────
+$result     = CrmApi::getBlogs($currentPage, $perPage);
+$blogs      = $result['blogs']               ?? [];
+$pagination = $result['pagination']          ?? [];
+$totalPages = (int)($pagination['totalPages'] ?? 1);
 
-$blogs      = $result['blogs']      ?? [];
-$pagination = $result['pagination'] ?? [];
-$totalPages = $pagination['totalPages'] ?? 1;
-
-// ── Page SEO ──────────────────────────────────────────────────────────────────
-$pageTitle       = 'Urology Blog | Expert Health Articles | Dr. Manmeet';
-$metaDescription = 'Expert articles on kidney stones, urological health, and treatments by Dr. Manmeet Singh, leading urologist.';
-$canonical       = 'https://urologybymanmeet.com/blog' . ($currentPage > 1 ? '/?page=' . $currentPage : '/');
+// ── Page-level SEO ────────────────────────────────────────────────────────────
+$baseUrl   = 'https://www.urologybymanmeet.com';
+$canonical = $baseUrl . '/blog/' . ($currentPage > 1 ? '?page=' . $currentPage : '');
 
 ?>
 <!DOCTYPE html>
@@ -34,112 +38,111 @@ $canonical       = 'https://urologybymanmeet.com/blog' . ($currentPage > 1 ? '/?
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><?= htmlspecialchars($pageTitle) ?></title>
-  <meta name="description" content="<?= htmlspecialchars($metaDescription) ?>">
+
+  <title>Urology Health Blog | Expert Articles | Dr. Manmeet Singh</title>
+  <meta name="description" content="Expert articles on kidney stones, prostate health, urinary disorders and more from Dr. Manmeet Singh, leading urologist in Lucknow.">
   <link rel="canonical" href="<?= htmlspecialchars($canonical) ?>">
 
-  <!-- Open Graph -->
-  <meta property="og:type"        content="website">
-  <meta property="og:title"       content="<?= htmlspecialchars($pageTitle) ?>">
-  <meta property="og:description" content="<?= htmlspecialchars($metaDescription) ?>">
-  <meta property="og:url"         content="<?= htmlspecialchars($canonical) ?>">
-
-  <!-- Pagination hints for Google -->
+  <!-- Pagination signals for Google -->
   <?php if ($currentPage > 1): ?>
-    <link rel="prev" href="<?= htmlspecialchars('https://urologybymanmeet.com/blog/?page=' . ($currentPage - 1)) ?>">
+    <link rel="prev" href="<?= htmlspecialchars($baseUrl . '/blog/?page=' . ($currentPage - 1)) ?>">
   <?php endif; ?>
   <?php if ($currentPage < $totalPages): ?>
-    <link rel="next" href="<?= htmlspecialchars('https://urologybymanmeet.com/blog/?page=' . ($currentPage + 1)) ?>">
+    <link rel="next" href="<?= htmlspecialchars($baseUrl . '/blog/?page=' . ($currentPage + 1)) ?>">
   <?php endif; ?>
 
-  <!-- Your existing CSS -->
-  <link rel="stylesheet" href="/assets/css/style.css">
+  <!-- === Paste your existing <link> and <style> tags below === -->
 </head>
 <body>
 
-  <?php include __DIR__ . '/includes/header.php'; ?>
+  <!-- === Paste your existing header/nav include below === -->
+  <?php /* include $_SERVER['DOCUMENT_ROOT'] . '/includes/header.php'; */ ?>
 
-  <main class="blog-archive">
-    <div class="container">
+  <main>
+    <section class="blog-archive">
+      <div class="container">
 
-      <header class="section-header">
         <h1>Health Articles &amp; Guides</h1>
-        <p>Expert insights on urological health from Dr. Manmeet Singh</p>
-      </header>
+        <p class="section-subtitle">Expert insights from Dr. Manmeet Singh, Urologist</p>
 
-      <?php if (empty($blogs)): ?>
-        <div class="blog-empty">
-          <p>No articles published yet. Check back soon.</p>
-        </div>
-      <?php else: ?>
+        <?php if (empty($blogs)): ?>
 
-        <div class="blog-grid">
-          <?php foreach ($blogs as $blog): ?>
-            <article class="blog-card">
+          <p class="blog-empty">No articles published yet. Please check back soon.</p>
 
-              <?php if ($blog['featuredImage']): ?>
-                <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/" class="blog-card__image-link">
-                  <img
-                    src="<?= htmlspecialchars($blog['featuredImage']) ?>"
-                    alt="<?= htmlspecialchars($blog['title']) ?>"
-                    loading="lazy"
-                    width="600" height="400"
-                  >
-                </a>
+        <?php else: ?>
+
+          <div class="blog-grid">
+            <?php foreach ($blogs as $blog): ?>
+
+              <article class="blog-card">
+
+                <!-- Featured image (null-safe) -->
+                <?php if (!empty($blog['featuredImage'])): ?>
+                  <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/">
+                    <img
+                      src="<?= htmlspecialchars($blog['featuredImage']) ?>"
+                      alt="<?= htmlspecialchars($blog['title']) ?>"
+                      loading="lazy"
+                      width="800" height="450"
+                    >
+                  </a>
+                <?php endif; ?>
+
+                <div class="blog-card__body">
+
+                  <h2>
+                    <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/">
+                      <?= htmlspecialchars($blog['title']) ?>
+                    </a>
+                  </h2>
+
+                  <?php if (!empty($blog['excerpt'])): ?>
+                    <p class="blog-card__excerpt">
+                      <?= htmlspecialchars($blog['excerpt']) ?>
+                    </p>
+                  <?php endif; ?>
+
+                  <div class="blog-card__meta">
+                    <span><?= htmlspecialchars($blog['author']) ?></span>
+                    &middot;
+                    <time datetime="<?= htmlspecialchars($blog['publishedAt']) ?>">
+                      <?= date('F j, Y', strtotime($blog['publishedAt'])) ?>
+                    </time>
+                  </div>
+
+                  <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/" class="read-more">
+                    Read Article &rarr;
+                  </a>
+
+                </div>
+              </article>
+
+            <?php endforeach; ?>
+          </div>
+
+          <!-- Pagination -->
+          <?php if ($totalPages > 1): ?>
+            <nav class="pagination" aria-label="Blog pagination">
+              <?php if ($currentPage > 1): ?>
+                <a href="/blog/?page=<?= $currentPage - 1 ?>">&larr; Newer</a>
               <?php endif; ?>
 
-              <div class="blog-card__body">
-                <h2 class="blog-card__title">
-                  <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/">
-                    <?= htmlspecialchars($blog['title']) ?>
-                  </a>
-                </h2>
+              <span>Page <?= $currentPage ?> of <?= $totalPages ?></span>
 
-                <p class="blog-card__excerpt">
-                  <?= htmlspecialchars($blog['excerpt']) ?>
-                </p>
+              <?php if ($currentPage < $totalPages): ?>
+                <a href="/blog/?page=<?= $currentPage + 1 ?>">Older &rarr;</a>
+              <?php endif; ?>
+            </nav>
+          <?php endif; ?>
 
-                <footer class="blog-card__meta">
-                  <span class="blog-card__author">
-                    By <?= htmlspecialchars($blog['author']) ?>
-                  </span>
-                  <time datetime="<?= htmlspecialchars($blog['publishedAt']) ?>">
-                    <?= date('F j, Y', strtotime($blog['publishedAt'])) ?>
-                  </time>
-                </footer>
-
-                <a href="/blog/<?= htmlspecialchars($blog['slug']) ?>/" class="btn btn--outline">
-                  Read Article →
-                </a>
-              </div>
-
-            </article>
-          <?php endforeach; ?>
-        </div>
-
-        <!-- Pagination -->
-        <?php if ($totalPages > 1): ?>
-          <nav class="pagination" aria-label="Blog pages">
-            <?php if ($currentPage > 1): ?>
-              <a href="/blog/?page=<?= $currentPage - 1 ?>" class="pagination__prev">&larr; Previous</a>
-            <?php endif; ?>
-
-            <span class="pagination__info">
-              Page <?= $currentPage ?> of <?= $totalPages ?>
-            </span>
-
-            <?php if ($currentPage < $totalPages): ?>
-              <a href="/blog/?page=<?= $currentPage + 1 ?>" class="pagination__next">Next &rarr;</a>
-            <?php endif; ?>
-          </nav>
         <?php endif; ?>
 
-      <?php endif; ?>
-
-    </div>
+      </div>
+    </section>
   </main>
 
-  <?php include __DIR__ . '/includes/footer.php'; ?>
+  <!-- === Paste your existing footer include below === -->
+  <?php /* include $_SERVER['DOCUMENT_ROOT'] . '/includes/footer.php'; */ ?>
 
 </body>
 </html>

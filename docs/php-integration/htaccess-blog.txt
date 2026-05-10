@@ -1,31 +1,31 @@
 # ── Blog URL routing for urologybymanmeet.com ─────────────────────────────────
 #
-# Place these rules inside your EXISTING .htaccess or inside a
-# .htaccess file in the /blog/ subdirectory.
+# WHERE THIS GOES:
+#   Create a new file: /blog/.htaccess  (inside the /blog/ subdirectory)
+#   If /blog/ does not exist as a real directory, create it on the server.
 #
-# What it does:
-#   /blog/                           → blog-list.php  (page 1)
-#   /blog/?page=2                    → blog-list.php  (page 2)
-#   /blog/kidney-stone-treatment/    → blog-post.php?slug=kidney-stone-treatment
-#   /blog/kidney-stone-treatment     → same (with or without trailing slash)
+# WHAT IT DOES:
+#   /blog/                                → index.php (blog-list.php renamed)
+#   /blog/?page=2                         → index.php?page=2
+#   /blog/kidney-stone-treatment/         → post.php?slug=kidney-stone-treatment
+#   /blog/kidney-stone-treatment          → 301 redirect → /blog/kidney-stone-treatment/
 #
-# IMPORTANT: RewriteBase must match your directory structure.
-# If /blog/ is a real subdirectory with its own .htaccess, use:
-#   RewriteBase /blog/
-# If this is in the root .htaccess, use:
-#   RewriteBase /
+# HOW TO TEST:
+#   After uploading, visit: urologybymanmeet.com/blog/
+#   Then visit a real slug: urologybymanmeet.com/blog/urinary-incontinence-treatment-in-lucknow/
 
+Options -Indexes
 RewriteEngine On
 RewriteBase /blog/
 
-# Trailing slash normalisation — redirect /blog/slug to /blog/slug/
-RewriteCond %{REQUEST_URI} ^/blog/[a-z0-9-]+$
-RewriteRule ^(.+)$ /blog/$1/ [R=301,L]
-
-# Route /blog/SLUG/ to blog-post.php
+# ── Trailing slash enforcement ────────────────────────────────────────────────
+# Redirect /blog/slug to /blog/slug/ (canonical URL consistency)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^([a-z0-9-]+)/?$ post.php?slug=$1 [QSA,L]
+RewriteCond %{REQUEST_URI} !/$
+RewriteRule ^([a-z0-9-]+)$ /blog/$1/ [R=301,L]
 
-# The blog listing page (index.php or blog-list.php) is served normally
-# Make sure index.php is your blog-list.php renamed
+# ── Route /blog/SLUG/ to post.php ─────────────────────────────────────────────
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-z0-9-]+)/$ post.php?slug=$1 [QSA,L]
