@@ -20,6 +20,7 @@ const webhookRoutes     = require('./modules/webhooks/webhooks.routes');
 const publicRoutes      = require('./modules/public/public.routes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Request logging ───────────────────────────────────────────────────────────
 // 'dev' in development: "GET /api/leads 200 12ms"
