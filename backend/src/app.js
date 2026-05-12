@@ -111,12 +111,20 @@ app.get('/health', async (_req, res) => {
 //
 //  API-key protected (external doctor websites)
 //  POST   /api/public/appointments
+//  POST   /api/public/leads              ← API key auth, dedup + rate-limit
 //  GET    /api/public/blogs
 //  GET    /api/public/blogs/:slug
 //
-//  Webhook (Make.com)
+//  Webhook ingestion (Make.com / Zapier) — shared-secret auth
+//  POST   /api/public/meta-webhook       ← canonical
+//  POST   /api/public/google-webhook     ← canonical
+//  POST   /api/public/generic-webhook    ← canonical
+//
+//  Legacy webhook paths (backward compat — old Make.com scenarios)
 //  POST   /api/meta-webhook
+//  POST   /api/google-webhook
 //  POST   /api/generic-webhook
+//  POST   /api/site-lead
 
 app.use('/api/auth',         authRoutes);
 app.use('/api/doctors',      doctorRoutes);

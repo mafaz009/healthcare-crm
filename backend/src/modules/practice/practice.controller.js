@@ -1,8 +1,9 @@
-const prisma  = require('../../config/database');
-const path    = require('path');
-const fs      = require('fs');
-const env     = require('../../config/env');
+const prisma        = require('../../config/database');
+const path          = require('path');
+const fs            = require('fs');
+const env           = require('../../config/env');
 const { generateApiKey } = require('../../utils/apiKey');
+const { getLogs }   = require('../ingestion/ingestion.service');
 const { ok, error } = require('../../utils/response');
 
 const PRACTICE_SELECT = {
@@ -104,4 +105,15 @@ const regenerateApiKey = async (req, res) => {
   }
 };
 
-module.exports = { get, update, uploadLogo, regenerateApiKey };
+const getIngestionLogs = async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
+    const { event, source, dateFrom, dateTo, page, limit } = req.query;
+    const result = await getLogs({ doctorId, event, source, dateFrom, dateTo, page, limit });
+    return ok(res, result);
+  } catch (err) {
+    return error(res, err.message, err.statusCode || 500);
+  }
+};
+
+module.exports = { get, update, uploadLogo, regenerateApiKey, getIngestionLogs };

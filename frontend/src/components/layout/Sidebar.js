@@ -8,7 +8,7 @@ import {
   HomeIcon, UserGroupIcon, ClipboardDocumentListIcon,
   CalendarDaysIcon, DocumentTextIcon, Cog6ToothIcon,
   XMarkIcon, HeartIcon, UsersIcon, BuildingOffice2Icon,
-  ShieldCheckIcon,
+  ShieldCheckIcon, SignalIcon,
 } from '@heroicons/react/24/outline';
 
 /**
@@ -57,6 +57,13 @@ const NAV_ITEMS = [
     label: 'My Practice',
     // Clinic owners manage their own practice settings here
     show: ({ isDoctor }) => isDoctor,
+  },
+  {
+    href:  '/dashboard/leads/ingestion-logs',
+    icon:  SignalIcon,
+    label: 'Ingestion Logs',
+    // Webhook / form submission audit trail — admin and clinic owners
+    show: ({ isAdmin, isDoctor }) => isAdmin || isDoctor,
   },
   {
     href:  '/dashboard/audit-logs',

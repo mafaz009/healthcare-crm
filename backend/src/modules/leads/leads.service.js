@@ -11,6 +11,7 @@ const LEAD_SELECT = {
   utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, utmTerm: true,
   adSet: true, adName: true, landingPage: true, externalId: true,
   followUpAt: true,
+  assignedUserId: true,                                // scalar FK — needed by frontend picker
   doctorId: true, createdAt: true, updatedAt: true,
   doctor:       { select: { id: true, name: true, specialty: true } },
   assignedUser: { select: ASSIGNED_USER_SELECT },

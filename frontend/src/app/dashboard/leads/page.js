@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { useDebounce } from '@/hooks/useDebounce';
 import { leadsApi, LEAD_STATUSES, LEAD_SOURCES } from '@/lib/leads';
+import { getSourceBadgeClass } from '@/lib/ingestion';
 import { doctorsApi } from '@/lib/doctors';
 import StatusBadge    from '@/components/ui/StatusBadge';
 import Pagination     from '@/components/ui/Pagination';
@@ -173,9 +174,15 @@ function LeadRow({ lead, user }) {
         {lead.city && <p className="text-xs text-gray-400">{lead.city}</p>}
       </td>
       <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{lead.phone}</td>
-      <td className="px-5 py-3 text-gray-500 hidden md:table-cell capitalize">
-        {lead.source || '—'}
-        {lead.campaignName && <p className="text-xs text-gray-400 truncate max-w-[120px]">{lead.campaignName}</p>}
+      <td className="px-5 py-3 hidden md:table-cell">
+        {lead.source ? (
+          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getSourceBadgeClass(lead.source)}`}>
+            {lead.source}
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        )}
+        {lead.campaignName && <p className="text-xs text-gray-400 truncate max-w-[120px] mt-0.5">{lead.campaignName}</p>}
       </td>
       <td className="px-5 py-3"><StatusBadge status={lead.status} /></td>
 

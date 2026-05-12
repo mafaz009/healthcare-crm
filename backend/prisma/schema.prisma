@@ -134,11 +134,12 @@ model Doctor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users        User[]
-  leads        Lead[]
-  appointments Appointment[]
-  blogs        Blog[]
-  auditLogs    AuditLog[]
+  users          User[]
+  leads          Lead[]
+  appointments   Appointment[]
+  blogs          Blog[]
+  auditLogs      AuditLog[]
+  ingestionLogs  IngestionLog[]
 
   @@map("doctors")
 }
@@ -222,9 +223,10 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  comments      LeadComment[]
-  followUps     LeadFollowUp[]
-  statusHistory LeadStatusHistory[]
+  comments       LeadComment[]
+  followUps      LeadFollowUp[]
+  statusHistory  LeadStatusHistory[]
+  ingestionLogs  IngestionLog[]
 
   @@index([doctorId])
   @@index([status])
@@ -342,6 +344,43 @@ model Appointment {
 // ─────────────────────────────────────────────────────────────────────────────
 // BLOGS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INGESTION LOG  (append-only record of every inbound lead submission)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// event values:
+//   'lead_created'       – lead was successfully created
+//   'duplicate_skipped'  – same phone+doctorId within 30 days — silently ignored
+//   'validation_failed'  – payload missing required fields
+//   'spam_blocked'       – (future) rate-limit or spam-filter rejection
+//
+// source values:
+//   'meta', 'google', 'generic', 'site-lead', 'api'
+
+model IngestionLog {
+  id         Int      @id @default(autoincrement())
+  source     String   @db.VarChar(50)   // ingestion channel
+  event      String   @db.VarChar(50)   // what happened
+  doctorId   Int
+  doctor     Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  leadId     Int?                        // NULL if lead was not created
+  lead       Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  phone      String?  @db.VarChar(30)   // normalized digits-only phone
+  externalId String?  @db.VarChar(150)  // Meta lead_id, gclid, etc.
+  payload    Json?                       // raw inbound payload for debugging
+  ipAddress  String?  @db.VarChar(45)
+  note       String?  @db.VarChar(500)  // error message or context
+
+  createdAt  DateTime @default(now())
+
+  @@index([doctorId])
+  @@index([leadId])
+  @@index([event])
+  @@index([source])
+  @@index([createdAt])
+  @@map("ingestion_logs")
+}
 
 model Blog {
   id    Int    @id @default(autoincrement())

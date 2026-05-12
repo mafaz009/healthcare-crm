@@ -12,7 +12,7 @@
  */
 
 const router  = require('express').Router();
-const { body } = require('express-validator');
+const { body, query } = require('express-validator');
 const ctrl    = require('./practice.controller');
 const { protect, allowRoles } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
@@ -39,5 +39,21 @@ router.post('/logo', doctorOnly, uploadLogo.single('logo'), handleUploadError, c
 // POST /api/practice/regenerate-key — regenerate own API key
 // DOCTOR_ADMIN can rotate their own key without needing super admin
 router.post('/regenerate-key', doctorOnly, ctrl.regenerateApiKey);
+
+// GET /api/practice/ingestion-logs — paginated ingestion event log for this practice
+router.get(
+  '/ingestion-logs',
+  doctorOnly,
+  [
+    query('page').optional().isInt({ min: 1 }),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('event').optional().isIn(['lead_created', 'duplicate_skipped', 'validation_failed', 'spam_blocked']),
+    query('source').optional().trim(),
+    query('dateFrom').optional().isISO8601(),
+    query('dateTo').optional().isISO8601(),
+  ],
+  validate,
+  ctrl.getIngestionLogs,
+);
 
 module.exports = router;

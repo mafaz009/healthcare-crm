@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { getPractice, updatePractice, uploadPracticeLogo, regenerateApiKey } from '@/lib/practice';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   ClipboardDocumentIcon, ArrowPathIcon, CheckIcon,
-  PhotoIcon, BuildingOffice2Icon,
+  PhotoIcon, BuildingOffice2Icon, SignalIcon,
 } from '@heroicons/react/24/outline';
 
 // ── API key display with copy ──────────────────────────────────────────────────
@@ -302,6 +303,110 @@ export default function PracticePage() {
           <ApiKeyField apiKey={practice.apiKey} onRegenerate={handleRegenKey} />
         )}
       </div>
+
+      {/* Lead Ingestion */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Lead Ingestion Endpoints</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Use these URLs in Make.com, website forms, or any automation.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/leads/ingestion-logs"
+            className="flex items-center gap-1.5 text-sm text-brand-600 hover:text-brand-700 font-medium"
+          >
+            <SignalIcon className="w-4 h-4" />
+            View Logs
+          </Link>
+        </div>
+
+        <div className="space-y-3">
+          <EndpointRow
+            label="Website Form (PHP / HTML)"
+            method="POST"
+            path="/api/public/leads"
+            auth="X-Api-Key: <your-api-key>"
+            note="Use your API key above. doctorId is resolved server-side — never put it in the form."
+          />
+          <EndpointRow
+            label="Meta / Facebook Lead Ads (Make.com)"
+            method="POST"
+            path="/api/public/meta-webhook"
+            auth="X-Webhook-Secret: <shared-secret>"
+            note="Set doctorId in the Make.com HTTP body. UTM defaults to facebook/paid_social."
+          />
+          <EndpointRow
+            label="Google Lead Form (Make.com)"
+            method="POST"
+            path="/api/public/google-webhook"
+            auth="X-Webhook-Secret: <shared-secret>"
+            note="Set doctorId in the Make.com HTTP body. UTM defaults to google/cpc."
+          />
+          <EndpointRow
+            label="Generic / Other Sources (Make.com)"
+            method="POST"
+            path="/api/public/generic-webhook"
+            auth="X-Webhook-Secret: <shared-secret>"
+            note="Pass source field to identify the channel (justdial, practo, whatsapp, etc.)"
+          />
+        </div>
+
+        <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-800 space-y-1">
+          <p className="font-medium">Required body fields for all endpoints:</p>
+          <p className="font-mono text-xs bg-white/70 rounded px-2 py-1 border border-blue-100">
+            {`{ "patientName": "...", "phone": "9876543210" }`}
+          </p>
+          <p className="text-blue-600 text-xs mt-1">
+            Optional: email, city, campaignName, utmSource, utmMedium, utmCampaign,
+            utmContent, utmTerm, adSet, adName, landingPage, externalId
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Endpoint row ──────────────────────────────────────────────────────────────
+
+function EndpointRow({ label, method, path, auth, note }) {
+  const [copied, setCopied] = useState(false);
+  const fullUrl = `https://api.yourdomain.com${path}`;
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(fullUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700">{label}</span>
+        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-mono">
+          {method}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 text-xs font-mono bg-gray-50 border border-gray-200 px-2 py-1.5 rounded text-gray-600 truncate">
+          {path}
+        </code>
+        <button
+          onClick={copy}
+          title="Copy full URL"
+          className="p-1.5 rounded border border-gray-200 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+        >
+          {copied
+            ? <CheckIcon className="w-3.5 h-3.5 text-green-500" />
+            : <ClipboardDocumentIcon className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">
+        <span className="font-medium">Auth:</span>{' '}
+        <code className="bg-gray-100 px-1 rounded">{auth}</code>
+      </p>
+      {note && <p className="text-xs text-gray-400">{note}</p>}
     </div>
   );
 }
