@@ -34,7 +34,7 @@ export function AuthProvider({ children }) {
     const { data } = await api.post('/api/auth/login', { identifier, password });
     setSession(data.data.token, data.data.user);
     setUser(data.data.user);
-    return data.data.user;
+    return data.data;  // includes mustChangePassword flag
   };
 
   const logout = async () => {
@@ -44,8 +44,26 @@ export function AuthProvider({ children }) {
     router.push('/login');
   };
 
+  /**
+   * Refresh the user state from the server.
+   * Call after operations that change user data (e.g. password change).
+   */
+  const refreshUser = async () => {
+    try {
+      const { data } = await api.get('/api/auth/me');
+      setUser(data.data);
+      // Keep localStorage in sync (used for instant load on next mount)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('crm_user', JSON.stringify(data.data));
+      }
+      return data.data;
+    } catch {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

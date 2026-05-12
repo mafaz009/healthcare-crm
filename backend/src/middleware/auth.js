@@ -43,6 +43,7 @@ const protect = async (req, res, next) => {
       id: true, name: true, loginId: true, email: true,
       role: true, doctorId: true, isActive: true,
       tokenVersion: true, permissions: true,
+      mustChangePassword: true,
     },
   });
 

@@ -16,13 +16,18 @@ const PROTECTED_ROUTES = [
   { prefix: '/dashboard/audit-logs', roles: ['SUPER_ADMIN'] },
   { prefix: '/dashboard/staff',      roles: ['SUPER_ADMIN', 'DOCTOR_ADMIN'] },
   { prefix: '/dashboard/practice',   roles: ['DOCTOR_ADMIN'] },
+  // leads/ingestion-logs accessible to DOCTOR_ADMIN and SUPER_ADMIN
+  { prefix: '/dashboard/leads/ingestion-logs', roles: ['SUPER_ADMIN', 'DOCTOR_ADMIN'] },
 ];
 
 function checkRouteAccess(pathname, userRole) {
   const match = PROTECTED_ROUTES.find((r) => pathname.startsWith(r.prefix));
-  if (!match) return true; // public to all authenticated users
+  if (!match) return true;
   return match.roles.includes(userRole);
 }
+
+// The forced-change page is always accessible to any authenticated user
+const FORCE_CHANGE_PATH = '/dashboard/force-change-password';
 
 export default function DashboardLayout({ children }) {
   const { user, loading } = useAuth();
@@ -36,6 +41,20 @@ export default function DashboardLayout({ children }) {
     // Not logged in → redirect to login
     if (!user) {
       router.replace('/login');
+      return;
+    }
+
+    // ── Forced password change gate ────────────────────────────────────────────
+    // If mustChangePassword is set, block all dashboard routes except the
+    // force-change page. The user must change their password before proceeding.
+    if (user.mustChangePassword && pathname !== FORCE_CHANGE_PATH) {
+      router.replace(FORCE_CHANGE_PATH);
+      return;
+    }
+
+    // Once password is cleared, exit the force-change page automatically
+    if (!user.mustChangePassword && pathname === FORCE_CHANGE_PATH) {
+      router.replace('/dashboard');
       return;
     }
 
@@ -59,7 +78,6 @@ export default function DashboardLayout({ children }) {
     );
   }
 
-  // No user or access denied — return null while redirect happens
   if (!user || !checkRouteAccess(pathname, user.role)) return null;
 
   return (

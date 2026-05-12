@@ -4,9 +4,6 @@
  * DOCTOR_ADMIN can manage staff within their own tenant (doctorId enforced server-side).
  * SUPER_ADMIN can manage staff across all tenants (no restriction).
  * STAFF role has no access to any of these routes.
- *
- * This module replaces the /api/doctors/:id/staff sub-routes which required SUPER_ADMIN.
- * Those sub-routes remain for backwards compatibility but delegate here.
  */
 
 const router  = require('express').Router();
@@ -16,21 +13,24 @@ const { protect, allowRoles, tenantFilter } = require('../../middleware/auth');
 const { auditLog } = require('../../middleware/auditLog');
 const validate = require('../../middleware/validate');
 
-// Both DOCTOR_ADMIN and SUPER_ADMIN can access these routes
 const canManageStaff = [
   protect,
   allowRoles('SUPER_ADMIN', 'DOCTOR_ADMIN'),
   tenantFilter,
 ];
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// ── Params & validators ───────────────────────────────────────────────────────
+
+const idParam = param('id').isInt({ min: 1 }).withMessage('Invalid staff ID');
 
 const createRules = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-  // DOCTOR_ADMIN cannot assign staff to a different doctorId — enforced in controller.
-  // SUPER_ADMIN can specify doctorId explicitly.
+  // password is OPTIONAL — if omitted, a temporary password is auto-generated
+  // and mustChangePassword is set to true (invite flow).
+  body('password')
+    .optional()
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('doctorId').optional().isInt({ min: 1 }).withMessage('Invalid doctorId'),
   body('permissions').optional().isObject().withMessage('permissions must be an object'),
 ];
@@ -41,13 +41,9 @@ const updateRules = [
   body('permissions').optional().isObject().withMessage('permissions must be an object'),
 ];
 
-const idParam = param('id').isInt({ min: 1 }).withMessage('Invalid staff ID');
-
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── CRUD ──────────────────────────────────────────────────────────────────────
 
 // GET /api/staff
-// SUPER_ADMIN: returns all staff (can filter by ?doctorId=X)
-// DOCTOR_ADMIN: returns only their own staff
 router.get('/', canManageStaff, [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 }),
@@ -59,18 +55,17 @@ router.get('/', canManageStaff, [
 router.get('/:id', canManageStaff, [idParam], validate, ctrl.getById);
 
 // POST /api/staff
-// Creates a staff user under the requesting DOCTOR_ADMIN's tenant.
-// SUPER_ADMIN must supply doctorId in body.
+// Without password: invite flow — auto-generates temp password, sets mustChangePassword
+// With password: explicit flow — creates account with supplied password
 router.post(
   '/',
   canManageStaff,
   createRules,
   validate,
-  auditLog('staff.create', (req) => ({ email: req.body.email, name: req.body.name })),
   ctrl.create
 );
 
-// PATCH /api/staff/:id — update name, isActive, permissions
+// PATCH /api/staff/:id
 router.patch(
   '/:id',
   canManageStaff,
@@ -80,27 +75,24 @@ router.patch(
   ctrl.update
 );
 
-// PATCH /api/staff/:id/enable  |  /api/staff/:id/disable
-// Separate disable route to enforce audit logging on security-sensitive action
+// ── Status ────────────────────────────────────────────────────────────────────
+
 router.patch(
   '/:id/disable',
   canManageStaff,
-  [idParam],
-  validate,
-  auditLog('staff.disable'),
+  [idParam], validate,
   ctrl.disable
 );
 
 router.patch(
   '/:id/enable',
   canManageStaff,
-  [idParam],
-  validate,
-  auditLog('staff.enable'),
+  [idParam], validate,
   ctrl.enable
 );
 
-// PATCH /api/staff/:id/permissions — set granular permission overrides
+// ── Permissions ───────────────────────────────────────────────────────────────
+
 router.patch(
   '/:id/permissions',
   canManageStaff,
@@ -111,6 +103,46 @@ router.patch(
   validate,
   auditLog('staff.permissions'),
   ctrl.updatePermissions
+);
+
+// ── Credential management ─────────────────────────────────────────────────────
+
+/**
+ * POST /api/staff/:id/reset-password
+ *
+ * Generates a new temporary password, forces the user to change it on next login,
+ * and immediately invalidates all active sessions via tokenVersion increment.
+ *
+ * Response includes `tempPassword` — show it to the admin ONCE, then discard.
+ * The plaintext is never stored.
+ *
+ * DOCTOR_ADMIN: can only reset their own tenant's staff passwords.
+ * SUPER_ADMIN: can reset any staff member's password.
+ * Security: tenant ownership enforced in the service via getOwnedStaff().
+ */
+router.post(
+  '/:id/reset-password',
+  canManageStaff,
+  [idParam], validate,
+  ctrl.resetPassword
+);
+
+/**
+ * POST /api/staff/:id/force-logout
+ *
+ * Increments tokenVersion — every active JWT for this user immediately becomes
+ * invalid. The user will receive 401 on their next API request and must re-login.
+ *
+ * Use cases:
+ *   - Staff member left the clinic
+ *   - Suspicious activity detected
+ *   - Shared device needs to be cleared
+ */
+router.post(
+  '/:id/force-logout',
+  canManageStaff,
+  [idParam], validate,
+  ctrl.forceLogout
 );
 
 module.exports = router;

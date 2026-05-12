@@ -95,6 +95,14 @@ model User {
   // A missing key means "use role default". Explicit false overrides the default.
   permissions Json?
 
+  // Set to true by admin when:
+  //   - A new staff account is invited (invite flow, no manual password setup)
+  //   - An admin resets a user's password
+  // Cleared to false when the user successfully changes their own password.
+  // The dashboard layout enforces a redirect to /dashboard/force-change-password
+  // until this flag is cleared. No server-side route blocking — UI-enforced.
+  mustChangePassword Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

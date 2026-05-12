@@ -9,6 +9,7 @@ const USER_SELECT = {
   id: true, name: true, loginId: true, email: true,
   role: true, doctorId: true, isActive: true,
   tokenVersion: true, permissions: true,
+  mustChangePassword: true,
 };
 
 // ── JWT ───────────────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ const login = async (identifier, password) => {
   });
 
   if (!user)          throw { statusCode: 401, message: 'Invalid credentials' };
-  if (!user.isActive) throw { statusCode: 403, message: 'Account is disabled. Contact your administrator.' };
+  if (!user.isActive) throw { statusCode: 403, message: 'Account is disabled. Contact your administrator.', code: 'ACCOUNT_DISABLED' };
 
   const match = await bcrypt.compare(password, user.password);
   if (!match) throw { statusCode: 401, message: 'Invalid credentials' };
@@ -68,7 +69,15 @@ const login = async (identifier, password) => {
 
   const token = signToken(user);
   const { password: _pw, ...safeUser } = user;
-  return { token, user: safeUser };
+
+  // If the user must change their password, signal this to the frontend.
+  // The dashboard layout will redirect to /dashboard/force-change-password.
+  // The token is still valid — they can call /api/auth/change-password.
+  return {
+    token,
+    user: safeUser,
+    mustChangePassword: user.mustChangePassword === true,
+  };
 };
 
 // ── Get current user ──────────────────────────────────────────────────────────
@@ -103,11 +112,13 @@ const changePassword = async (userId, oldPassword, newPassword) => {
 
   // Increment tokenVersion — instantly invalidates all existing JWT sessions.
   // The user must log in again on every device after a password change.
+  // Clear mustChangePassword — this was a forced change; now fulfilled.
   await prisma.user.update({
     where: { id: userId },
     data: {
-      password:     hashed,
-      tokenVersion: { increment: 1 },
+      password:           hashed,
+      tokenVersion:       { increment: 1 },
+      mustChangePassword: false,     // clear the forced-change flag
     },
   });
 };
